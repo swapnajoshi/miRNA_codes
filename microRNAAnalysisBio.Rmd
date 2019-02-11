@@ -1,0 +1,320 @@
+---
+title: "microRNAAnalysis"
+author: "Swapna Mahurkar-Joshi"
+date: "March 28, 2017"
+output: html_document
+---
+
+# Data input
+Read-in the nanostring RCC raw files and phenotype data (names of samples have preliminary phenotype information)
+
+```{r Reading data include=FALSE}
+
+library(miRNAfunctions)
+ls("package:miRNAfunctions")
+library(NanoStringNorm)
+rccPath <- "C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/data/RawData/biopsy/tissueRCC"
+rccfiles<-read.markup.RCC(rcc.path = rccPath, rcc.pattern="*.RCC|*.rcc",  
+exclude=NULL, include = NULL, nprobes=-1)
+
+tissueMir<-rccfiles$x
+phenoDat<-colnames(tissueMir)[4:48]
+
+phenoDat1<-as.data.frame(matrix(unlist(strsplit(phenoDat,"_")), nrow=45, ncol=6, byrow=TRUE))
+row.names(phenoDat1)<-phenoDat
+colnames(phenoDat1)<-c("NDP_number","Condition","Sex","Lane","Tissue_type","Run_date")
+phenoDat1$Cartridge<-substr(phenoDat1$Lane,1,1)
+phenoDat1<-phenoDat1[order(phenoDat1$Cartridge, phenoDat1$Lane),]
+phenoDat1$Dx<-phenoDat1$Condition
+phenoDat1$Dx<-gsub("IBSC","IBS",phenoDat1$Dx)
+phenoDat1$Dx<-gsub("IBSD","IBS",phenoDat1$Dx)
+
+save(phenoDat1, tissueMir, file = "C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/data/ConsistantData/biopsy/miRbiopsyLevel1.Rda")
+```
+
+# Quality check
+
+```{r Quality check}
+
+load("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/data/ConsistantData/biopsy/miRbiopsyLevel1.Rda")
+posC<-tissueMir[1:6,4:48]
+row.names(posC)<-posC[,2]
+posC1<-t(posC[sort(row.names(posC)),])
+
+png("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/temp/miRNA_biopsy/biopsy_QC/posControls.png", height = 1500, width = 2000, res = 150)
+boxplot(posC1) 
+dev.off()
+
+for (i in 1:45) {
+  png(paste(i,"C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/temp/miRNA_biopsy/biopsy_QC/posCon.png"))	
+  barplot(posC1[i,]) # to look at individual samples
+  dev.off()
+}
+
+negC<-tissueMir[7:12,4:48]
+row.names(negC)<-negC[,2]
+negC1<-t(negC)
+
+png("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/temp/miRNA_biopsy/biopsy_QC/negControls.png")
+boxplot(negC1) 
+dev.off()
+```
+
+# Normalize the raw data
+Select best normalization method by creating a dataframe of coefficient of variation (CV) with all possible combinations of positive normalization factor, background, sample content prediction and other nomralizations. Choose a combination that is not too stringent on number of expressed genes (ex: avoid extreme background correction), but yiled lowest CV.
+
+```{r}
+
+norm.comp(x, anno, 
+replicates = NULL, 
+CodeCount.methods = c('none', 'sum', 'geo.mean'),
+Background.methods = c('none','mean', 'mean.2sd','max'), 
+SampleContent.methods = c('none','housekeeping.sum', 'housekeeping.geo.mean', 
+	'total.sum','top.mean', 'top.geo.mean', 'low.cv.geo.mean'),
+OtherNorm.methods = c('none','quantile','zscore', 'rank.normal', 'vsn'),
+histogram = FALSE, 
+verbose = TRUE, 
+icc.method = "mixed")
+
+dfNorComp <- norm.comp(tissueMir)
+dfNorComp <- dfNorComp[order(dfNorComp$cv.pos.results),]
+
+```
+
+# Topgeo mean is recommended for miRNA, and has relatively low CV. Mean is a moderate background correction method
+
+# Positive Normalization factor for A6145 looks too high, exclude the sample
+
+```{r}
+tissueMir1 <- tissueMir
+tissueMir1$"A6145_HC_F_F09_Tis_Apr15" <- NULL
+```
+
+```{r}
+phenoDat2 <- phenoDat1[row.names(phenoDat1)%in%colnames(tissueMir1),]
+pData1 <- as.data.frame(phenoDat2[row.names(phenoDat2)%in%colnames(tissueMir1),c(2,3,8)])
+pData1 <- pData1[colnames(tissueMir1[,-c(1,2,3)]),]
+pData1$DxGroup <- ifelse(pData1$Dx == "HC", 1, 2 )
+pData1$SexGroup <- ifelse(pData1$Sex == "M", 1,2)
+traits <- as.data.frame(cbind(pData1$DxGroup, pData1$SexGroup))
+row.names(traits) <- row.names(pData1)
+colnames(traits) <- c("Dx", "Sex")
+
+library(NanoStringNorm)
+
+nano.norm<-NanoStringNorm(tissueMir1, anno = NA,header = NA,
+                          Probe.Correction.Factor ='none',CodeCount='geo.mean',
+                          Background = 'mean', SampleContent =	'top.geo.mean',	
+                          OtherNorm =	'none',
+                          round.values = TRUE,
+                          is.log = FALSE,
+                          take.log = TRUE,
+                          return.matrix.of.endogenous.probes = FALSE,
+                          traits = traits,
+                          predict.conc = FALSE,
+                          verbose = TRUE,
+                          genes.to.fit,
+                          genes.to.predict,
+                          guess.cartridge = FALSE
+)
+
+nano.norm1 <- as.data.frame(nano.norm$normalized.data)
+row.names(nano.norm1) <- nano.norm1[,2]
+nano.norm2 <- nano.norm1 [nano.norm1$Code.Class == "Endogenous1", -c(1,2,3)]
+nano.norm2$mean1 <- apply(nano.norm2,1,mean)
+nano.norm3 <- subset(nano.norm2, nano.norm2$mean1 > 2.32); dim(nano.norm3)
+nano.norm3$mean1 <- NULL
+
+phenoDat2 <- phenoDat1[row.names(phenoDat1)%in%colnames(nano.norm3),]
+pData1 <- as.data.frame(phenoDat2[colnames(nano.norm3),c(2,3,8)])
+
+phenoData <- new("AnnotatedDataFrame", data=pData1)
+exprDat <- new("ExpressionSet", exprs=as.matrix(nano.norm3), 
+               phenoData=phenoData)
+
+save(tissueMir1, pData1, nano.norm, nano.norm3, exprDat, file = "C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/data/ConsistantData/biopsy/miRbiopsyLevel2.Rda")
+```
+
+# QC plots
+
+```{r}
+# Plot all the plots as PDF report.  See help on Plot.NanoStringNorm for examples
+pdf('NanoStringNorm_Example_Plots_All.pdf');
+Plot.NanoStringNorm(
+	x = nano.norm,
+	label.best.guess = TRUE,
+	plot.type = 'all'
+	);
+dev.off();
+
+Plot.NanoStringNorm(
+	x = nano.norm,
+	label.best.guess = TRUE,
+	plot.type = 'all'
+	)
+
+qqplot1<-qqplot.data(apply(nano.norm3,1,mean))
+ggsave(qqplot1, file=paste(getwd(),"temp/miRNA_biopsy/biopsy_DE/biopsy_QC/qqplottissue.mean.IBS1.png", sep = "/"),height=6.75,width=9) ## 
+qqplot1
+```
+
+# DE genes
+
+```{r}
+
+load("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/data/ConsistantData/biopsy/miRbiopsyLevel2.Rda")
+library(limma)
+cont1 <- paste("IBS", "HC", sep = "-")
+lmResDx <- lmDF2F(exprs(exprDat), pData1$Dx, cont1)
+
+cont1 <- paste("IBSC","HC", sep = "-")
+cont2 <- paste("IBSD", "HC", sep = "-")
+cont3 <- paste("IBSC", "IBSD", sep = "-")
+lmResBh <- lmDF3F(exprs(exprDat), pData1$Condition, cont1, cont2, cont3)
+colnames(lmResBh) <- c(paste(colnames(lmResBh)[1:7],"IBSC_HC", sep = "_"), paste(colnames(lmResBh)[8:14],"IBSD_HC", sep = "_"), paste(colnames(lmResBh)[15:21],"IBSC_IBSD", sep = "_"))
+
+
+SigIBS_HC <- lmResDx[lmResDx$P.Value <= 0.05, ]
+SigIBS_HC_fdr10 <- subset(lmResDx, lmResDx$adj.P.Val < 0.1)
+tissueMir1[tissueMir1[,2] %in% row.names(SigIBS_HC_fdr10 ),]$Accession
+# [1] "MIMAT0002888" "MIMAT0000763" "MIMAT0000680" "MIMAT0000707"
+
+SigIBSC_HC <- lmResBh[lmResBh$'P.Value_IBSC_HC' <= 0.05,c(1:7)]
+SigIBSD_HC <- lmResBh[lmResBh$'P.Value_IBSD_HC' <= 0.05,c(8:14)]
+SigIBSC_HC_fdr10 <- subset(SigIBSC_HC, SigIBSC_HC$adj.P.Val < 0.1)
+tissueMir1[tissueMir1[,2] %in% row.names(SigIBSC_HC_fdr10 ),]$Accession
+# [1] "MIMAT0000098" "MIMAT0000763" "MIMAT0000680"
+
+write.csv(SigIBS_HC, file = "C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/temp/miRNA_biopsy/biopsy_DE/SigIBS_HC.csv")
+write.csv(SigIBSC_HC, file = "C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/temp/miRNA_biopsy/biopsy_DE/SigIBSC_HC.csv")
+write.csv(SigIBSD_HC, file = "C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/temp/miRNA_biopsy/biopsy_DE/SigIBSD_HC.csv")
+
+```
+
+# Heatmap of DE genes
+
+```{r}
+sigMatDx <- exprs(exprDat)[row.names(exprs(exprDat))%in%row.names(SigIBS_HC),]
+sigMatBh <- exprs(exprDat)[row.names(exprs(exprDat))%in%c(row.names(SigIBSC_HC), row.names(SigIBSD_HC)),]; dim(sigMatBh)
+
+png("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/temp/miRNA_biopsy/biopsy_DE/HM_sigDXmiRprobes.new.png", height = 1500, width = 2000, res = 300)
+hm1 <- heatmapZ(sigMatDx[,-23], pData1[-23,]$Dx, pData1[-23,]$Condition, pData1[-23,]$Sex)
+dev.off()
+
+png("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSmiRNAproject/temp/miRNA_biopsy/biopsy_DE/HM_sigBHmiRprobes.png", height = 1500, width = 2000, res = 300)
+hm2 <- heatmapZ(sigMatBh[,-23], pData1[-23,]$Dx, pData1[-23,]$Condition, pData1[-23,]$Sex)
+dev.off()
+
+
+# found 3 groups one HC + HClike IBS, Diarrhea predominant IBS and constipation predominant IBS. see if the fisher test is significant for BH vs these clusters.
+sigMatBh1 <- sigMatBh[,-23]
+sigMatBh1 <- sigMatBh1[,hm2$colInd]
+
+pData2 <- pData1[-23,]
+pData2 <- pData2[colnames(sigMatBh1),]
+pData2$hmCLuster <- "NA"
+
+pData2[row.names(pData2)%in%colnames(sigMatBh1[,c(1:9)]),]$hmCLuster <- gsub("NA", "IBSDcluster", pData2[row.names(pData2)%in%colnames(sigMatBh1[,c(1:9)]),]$hmCLuster)
+
+pData2[row.names(pData2)%in%colnames(sigMatBh1[,c(10:32)]),]$hmCLuster <- gsub("NA", "HClikeIBScluster", pData2[row.names(pData2)%in%colnames(sigMatBh1[,c(10:32)]),]$hmCLuster)
+
+pData2[row.names(pData2)%in%colnames(sigMatBh1[,c(32:43)]),]$hmCLuster <- gsub("NA", "IBSCcluster", pData2[row.names(pData2)%in%colnames(sigMatBh1[,c(32:43)]),]$hmCLuster)
+```
+
+```{r}
+library(ggplot2)
+# PCA analysis
+# Dx probes
+z1 <- t(apply(sigMatDx, 1, scale))
+row.names(z1)<-row.names(sigMatDx)
+pcs <- prcomp(z1[,-23], center = F, scale = F)
+prinComp <- cbind(pData1[-23,]$Condition, pcs$rotation)
+colnames(prinComp)[1] <- "BH"
+prinComp <- as.data.frame(prinComp)
+plot(prinComp[, c("BH", "PC1", "PC2", "PC3")], pch = 19, cex = 0.8)
+prinComp$BH <- as.factor(prinComp$BH)
+ggplot(prinComp, aes(x = PC1, y = PC2, colour = as.factor(prinComp$BH))) + geom_point(size = 2)
+
+# BH probes
+z2 <- t(apply(sigMatBh, 1, scale))
+row.names(z2)<-row.names(sigMatBh)
+set.seed(2210)
+pcs <- prcomp(z2[,-23], center = F, scale = F)
+prinComp <- cbind(as.factor(pData1[-23,]$Condition), pcs$rotation)
+colnames(prinComp)[1] <- "BH"
+prinComp <- as.data.frame(prinComp)
+plot(prinComp[, c("BH", "PC1", "PC2", "PC3")], pch = 19, cex = 0.8)
+library(ggplot2)
+ggplot(prinComp, aes(x = PC1, y = PC2, colour = as.factor(pData1[-23,]$Condition), label = TRUE)) + geom_point(size = 2)
+
+```
+# Any probe significanlty differnt between IBS and HC or between bowel habit subtypes was used for random forest classification
+```{r}
+library(randomForest)
+set.seed(2210)
+fit <- randomForest ( as.matrix(t(sigMatBh) ), as.factor(pData1$Dx))
+varImpPlot(fit)
+
+```
+
+```{r}
+## based on the heatmap, PCA plot as well as p bvalues, a panel of markers that would separate IBS from HC or HC-like IBS were
+
+bhPanel <- sigMatBh[row.names(sigMatBh) %in% c("hsa-miR-338-3p|0", "hsa-miR-758|0", "hsa-miR-363-3p|0.005",  "hsa-miR-23a-3p|0", "hsa-miR-532-5p|0",  "hsa-miR-100-5p|0", "hsa-miR-1|0", "hsa-miR-374a-5p|0",  "hsa-miR-106b-5p|0","hsa-miR-592|0", "hsa-let-7g-5p|0" ),]
+
+z3 <- t(apply(bhPanel, 1, scale))
+row.names(z3) <- row.names(bhPanel)
+colnames(z3) <- colnames(bhPanel)
+pcs <- prcomp(z3[,-23], center = F, scale = F)
+prinComp <- cbind(as.factor(pData1[-23,]$Condition), pcs$rotation)
+colnames(prinComp)[1] <- "BH"
+prinComp <- as.data.frame(prinComp)
+plot(prinComp[, c("BH", "PC1", "PC2", "PC3")], pch = 19, cex = 0.8)
+
+ggplot(prinComp, aes(x = PC1, y = PC2, colour = as.factor(pData1[-23,]$Condition), label = TRUE)) + geom_point(size = 2)
+
+hm3 <- heatmapZ(bhPanel[,-23], pData1[-23,]$Dx, pData1[-23,]$Condition, pData1[-23,]$Sex)
+
+```
+
+```{r}
+set.seed(2210); fit <- randomForest ( as.matrix(t(z3[,-23])) , as.factor(pData1[-23,]$Dx), ntree = 100); fit
+varImpPlot(fit)
+```
+
+```{r}
+# who are the patients in these groups
+dist1 <-  dist(t(z1[,-23]), method = "maximum")
+clustering <- hclust(dist1, method = "complete")
+hcd <- as.dendrogram(clustering)
+plot(hcd, main = "Upeer tree cut at 4.5")
+groups <- cbind(colnames(z1),  cutree(clustering, k=3))
+```
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

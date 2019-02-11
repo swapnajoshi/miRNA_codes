@@ -1,0 +1,291 @@
+---
+title: "IBS_microbiome_V3"
+author: "Swapna Mahurkar-Joshi"
+date: "June 22, 2016"
+output: word_document
+---
+
+Reproducible workflow for microbiome analysis:
+
+# Libraries
+```{r, message = FALSE}
+# install dada 2 package dev tools 
+
+# source("http://bioconductor.org/biocLite.R")
+# biocLite(suppressUpdates = FALSE)
+# biocLite("ShortRead", suppressUpdates = FALSE)
+
+# biocLite("devtools")
+# library("devtools")
+# devtools::install_github("benjjneb/dada2")
+# library(dada2)
+library(phyloseq)
+library("ggplot2")
+library("scales")
+library("grid")
+library("ape")
+library(phytools)
+#WGCNA
+library(WGCNA)
+library(flashClust)
+#Heatmap
+library(dplyr)
+library(NMF)
+library(RColorBrewer)
+
+```
+# Data import
+```{r}
+
+setwd("C:/Users/swapnajoshi-admin/Documents/swapna") 
+
+```
+
+```{r}
+# otu table
+header1<-scan("/otu_table_SCOR_biopsy.txt", nlines = 2, what = character())[8:91]
+genus=read.table("/otu_table_SCOR_biopsy.txt", sep="\t", skip=2, header=FALSE, row.names = 1)	
+names(genus)<-header1
+genus1 <- genus[,-dim(genus)[2]]
+
+# taxanomic data
+tax <- function(d,x) {y <-strsplit(x, ";")
+z <- matrix(unlist(y), nrow = length(x), ncol = 7, byrow = TRUE)
+rownames(z) <- d
+colnames(z) <- c("Kingdom","Phylum","Class", "Order","Family", "Genus", "Species")
+return(z)
+}
+taxa_mat <- tax(row.names(genus1), as.character(genus$ConsensusLineage))
+otus <- otu_table(genus1, taxa_are_rows = TRUE)
+tax1 <- tax_table(taxa_mat)
+
+# metadata
+traits_mat <- read.csv("C:/Users/swapnajoshi-admin/Documents/swapna/littleIbsMappingIBsHcClust.csv", sep = ",", row.names = 1)
+traits_mat$Group <- gsub(1,"HC", traits_mat$Group)
+traits_mat$Group <- gsub(2,"IBS", traits_mat$Group)
+
+traits_mat$Sex <- as.factor(traits_mat$Sex)
+traits_mat$BH <- as.factor(traits_mat$BH)
+
+traits_mat$Dx_Gender_interaction <- interaction(traits_mat$Group, traits_mat$Gender)
+traits <- sample_data(traits_mat)
+
+# phylogenic tree
+tree1 <- read_tree_greengenes("97_otus.tree")
+class(tree1)
+# x <- read.newick(file="97_otus.tree")
+# tree1 <- phy_tree(x)
+# is.rooted(tree1)
+# tree2 = root(tree1, 1, resolve.root = T)
+# any(tree1$tip.label == "'OTU1100'")
+ntaxa(tree1)
+# phyloseq object
+physeq = phyloseq(otus, tax1, traits, tree1)
+physeq
+```
+## Remove taxa not seen more than 3 times in at least 20% of the samples. This helps protect against an OTU with small mean & trivially large Coefficient of Variation. Save this as new phyloseq data object, PS. 
+```{r}
+PS = filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), 
+    TRUE)
+PS
+```
+# Transform abundances to the median sequencing depth.
+```{r}
+total <- median(sample_sums(PS))
+standf <- function(x, t = total) round(t * (x/sum(x)))
+PS1 <- transform_sample_counts(PS, standf)
+```
+# Filter the taxa using a cutoff of 3.0 for the Coefficient of Variation.
+```{r}
+PS2 <- filter_taxa(PS1, function(x) sd(x)/mean(x) > 3, TRUE)
+PS_b <- subset_taxa(PS2, Phylum == " p__Bacteroidetes")
+PS_f <- subset_taxa(PS2, Phylum == " p__Firmicutes")
+save(physeq, PS1, PS_b, PS_f, PS2, file = "IBS_phlyoseq.RData")
+```
+
+```{r}
+figures_dir_name = "microbiome_figures"
+if (!file.exists(figures_dir_name)) {
+    dir.create(figures_dir_name)
+}
+theme_set(theme_bw())
+```
+# Ordination plots
+```{r}
+PS.ca = ordinate(PS2, method = "CCA")
+
+alpha = 0.75 # transparency for plot points
+
+```
+# Definea a colour scale
+```{r}
+color_var = get_variable(PS2, "Group")
+color_pal = rainbow(length(levels(color_var)) + 1)
+names(color_pal) = c(levels(color_var), "taxa")
+color_pal["taxa"] = "black"
+```
+# Define a shape scale
+```{r}
+shape_var = get_taxa_unique(PS2, "Class")
+shape_scale = c(0:2, 11)
+names(shape_scale) = c(shape_var, "samples")
+
+```
+
+```{r}
+p1 = plot_ordination(PS2, PS.ca, "samples", color="Group", title="Ordination") 
+p1 + geom_point(size = 5)
+
+```
+# Perform NMDS on weighted UniFrac distance. This is a Bacteroidetes-only subset of the data.
+```{r}
+PS2.UUF = distance(PS2, "unifrac", weighted = FALSE)
+PS2.NMDS = ordinate(PS2, "NMDS", PS2.wUF)
+```
+
+```{r}
+p1 = plot_ordination(PS2, PS2.NMDS, "samples", color = "Group", title = "plot_ordination, NMDS, UUF")
+p1
+```
+
+```{r}
+p1 = p1 + geom_polygon(aes(fill = Group)) + geom_point(size = 5)
+p1
+
+```
+# Heatmaps
+```{r}
+title = "plot_heatmap; bray-curtis, NMDS"
+p2 = plot_heatmap(PS2, "NMDS", "bray", "Group", trans = log_trans(10), 
+    title = title)
+p2 = p2 + theme(axis.text.x = element_text(size = 10, angle = -90, hjust = 0))
+p2
+```
+# plot network
+```{r}
+plot_net(PS2, distance = "unifrac", type = "samples", maxdist = 0.8,
+color = "Group", shape = NULL,
+rescale = TRUE, point_size = 5, point_alpha = 1, point_label = NULL,
+hjust = 1.35, title = NULL)
+
+
+plot_net(PS2, maxdist=0.8, color="Group", shape="Sex")
+```
+# plot cluster trees
+```{r}
+title = "plot_tree_Bacteroidetes; Merged samples, tip_glom=0.1"
+phy_tree(PS_b)$node.label = substr(phy_tree(PS_b)$node.label, 1, 4)
+head(phy_tree(PS_b)$node.label)
+plot_tree(PS_b, "sampledodge", nodeplotboot(), "Family", "Group", "abundance", 
+    title = title, ladderize = "left")
+
+title = "plot_tree_Firmicutes; Merged samples, tip_glom=0.1"
+phy_tree(PS_f)$node.label = substr(phy_tree(PS_f)$node.label, 1, 4)
+head(phy_tree(PS_f)$node.label)
+plot_tree(PS_f, "sampledodge", nodeplotboot(), "Family", "Group", "abundance", 
+    title = title, ladderize = "left")
+```
+#very dense, consolidate data
+
+```{r}
+plot_tree(PS_b, color="Group", shape="Group", label.tips="Genus", size="Abundance")
+plot_tree(PS_b, color="Sex", shape="Group", label.tips="Genus", size="Abundance")
+plot_tree(PS_b, color="BH", shape="Group", label.tips="Genus", size="Abundance")
+```
+# abundance
+```{r}
+title = "plot_bar"
+p5 = plot_bar(PS2, "Group", "Abundance", "Phylum", title = title)
+p5
+
+```
+# Richness
+```{r}
+p1 <- plot_richness(PS2, "Group", title = "plot_richness")
+p1 + geom_boxplot(data = p1$data, aes(x = Group, y = value, color = Group), alpha = 0.1)
+```
+## Differences in richness between disease groups
+```{r}
+sample_variables(physeq)[1:10]
+
+p <- plot_richness(physeq, x = "as.factor(Group)")
+q <- p + geom_boxplot(data = p$data, aes(x = as.factor(Group), y = value, color = NULL), alpha = 0.1)
+ggsave(q, file ="richness_IBSvsHCs.png")
+q
+```
+## Differences in richness between bowel habit subtypes
+```{r}
+p <- plot_richness(physeq, x = "as.factor(BH)")
+q <- p + geom_boxplot(data = p$data, aes(x = as.factor(BH), y = value, color = NULL), alpha = 0.1)
+ggsave(q, file ="richness_bowelhabits.png")
+q
+```
+## Differences in richness between sex
+```{r}
+p <- plot_richness(physeq, x = "as.factor(Gender)")
+q <- p + geom_boxplot(data = p$data, aes(x = as.factor(Gender), y = value, color = NULL), alpha = 0.1)
+ggsave(q, file ="richness_Sex.png")
+q
+```
+## Differences in richness interaction between IBS and Sex
+```{r}
+p <- plot_richness(physeq, x = "Dx_Gender_interaction")
+q <- p + geom_boxplot(data = p$data, aes(x = as.factor(Dx_Gender_interaction), y = value, color = NULL), alpha = 0.1)
+ggsave(q, file ="richness_interaction_Dx_sex.png")
+q
+```
+# Abundance bar plots
+```{r}
+TopNOTUs = names(sort(taxa_sums(physeq), TRUE)[1:20])
+ent10 = prune_taxa(TopNOTUs, physeq)
+png("BarPlot_top10_Group.png", height = 3000, width = 3500, res = 200)
+plot_bar(ent10, "Group", fill = "Genus",facet_grid = ~Genus)
+dev.off()
+plot_bar(ent10, "Group", fill = "Genus",facet_grid = ~Genus)
+
+```
+# Abundance plots interaction Genus level
+```{r}
+TopNOTUs = names(sort(taxa_sums(physeq), TRUE)[1:20])
+ent10 = prune_taxa(TopNOTUs, physeq)
+png("BarPlot_top10_Group.png", height = 3000, width = 3500, res = 200)
+plot_bar(ent10, "Group", fill = "Genus",facet_grid = ~Genus)
+dev.off()
+plot_bar(ent10, "Dx_Gender_interaction", fill = "Genus",facet_grid = ~Genus)
+```
+# Abundance plots interaction family level
+```{r}
+TopNOTUs = names(sort(taxa_sums(physeq), TRUE)[1:20])
+ent10 = prune_taxa(TopNOTUs, physeq)
+png("BarPlot_top10_Group.png", height = 3000, width = 3500, res = 200)
+plot_bar(ent10, "Group", fill = "Genus",facet_grid = ~Genus)
+dev.off()
+plot_bar(ent10, "Dx_Gender_interaction", fill = "Family",facet_grid = ~Family)
+```
+# Abundance plots interaction phylum level
+```{r}
+TopNOTUs = names(sort(taxa_sums(physeq), TRUE)[1:20])
+ent10 = prune_taxa(TopNOTUs, physeq)
+png("BarPlot_top10_Group.png", height = 3000, width = 3500, res = 200)
+plot_bar(ent10, "Group", fill = "Genus",facet_grid = ~Genus)
+dev.off()
+plot_bar(ent10, "Dx_Gender_interaction", fill = "Phylum",facet_grid = ~Phylum)
+```
+# rarefaction
+```{r}
+set.seed(1022)
+phy <- rarefy_even_depth(physeq)
+# plot(as(otu_table(phy), 'vector'), as(otu_table(physeq), 'vector'))
+UniFrac(phy)
+```
+# Statistical testing
+```{r}
+alpha <- 0.05
+cor.p <- mt(PS2, "Group")
+subset(cor.p, adjp < alpha)
+subset(cor.p, fdr < alpha)
+
+subset(cor.p, rawp < alpha)
+
+```
+

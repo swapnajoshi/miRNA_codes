@@ -1,0 +1,538 @@
+---
+title: "miRNA_Biopsy_6152016_V3"
+author: "Swapna Mahurkar-Joshi"
+date: "June 15, 2016"
+output: word_document
+fig_caption: TRUE
+---
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r, , message=F, warning=F, echo = FALSE}
+#Funcitons and libraries:
+########
+Wilcox.test <- function(x, s1, s2) {
+  x1 <- x[s1]
+  x2 <- x[s2]
+  x1 <- as.numeric(x1)
+  x2 <- as.numeric(x2)
+  wx.out <- wilcox.test(x1, x2, alternative = "two.sided",
+                        paired = FALSE)
+  p.Wilcox <- as.numeric(wx.out$p.value)
+  return(p.Wilcox)
+}
+########
+qqplot.data <- function (vec) # argument: vector of numbers
+{
+  # following four lines from base R's qqline()
+  y <- quantile(vec[!is.na(vec)], c(0.25, 0.75))
+  x <- qnorm(c(0.25, 0.75))
+  slope <- diff(y)/diff(x)
+  int <- y[1L] - slope * x[1L]
+  
+  d <- data.frame(resids = vec)
+  
+  ggplot(d, aes(sample = resids)) + stat_qq() + geom_abline(slope = slope, intercept = int)
+  
+}
+########
+Expressed <- function(x) {rowSums(x[,grep("IBS", colnames(x))] > 0) >= dim(x)[2]/5 | rowSums(x[,grep("HC",colnames(x))] > 0) >= dim(x)[2]/5 }
+
+#########
+foldChange <- function(x) {ifelse (x >= 0, round(2^x,2), round(-1*2^(-1*x),2))}
+
+########
+tableSig <- function(x)
+{ a1 <- subset(x, x[,1] < 0.05)
+a2 <- subset(x, x[,2] < 0.05)
+a3 <- subset(x, x[,3] < 0.05)
+a4 <- subset(x, x[,4] < 0.05) 
+y <- rbind( round(a1,3), round(a2,3), round(a3,3), round(a4,3))
+y <- as.data.frame(y)
+z <- colnames(x[,1:4])
+Comparison <- c(c(rep(z[1], dim(a1)[1])),rep(z[2], dim(a2)[1]), rep(z[3], dim(a3)[1]), rep(z[4], dim(a4)[1]))
+y$Comparison <- Comparison
+y <- y[order(y[,1],y[,2],y[,3],y[,4]),]
+return(y)  
+}
+
+########
+source("https://bioconductor.org/biocLite.R")
+biocLite("circlize")
+library(NanoStringNorm)
+library(ggplot2)
+library(limma)
+library(ComplexHeatmap)
+library(circlize)
+
+```
+
+```{r}
+setwd("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/raw_data/all_rccs/tissueRCC/")
+rccfiles<-read.markup.RCC(rcc.pattern="*.RCC|*.rcc",  exclude=NULL, include = NULL, nprobes=-1)
+#Returns a list with two components. The first is the header information which contains sample IDs
+#and diagnostic information on the quality of the samples. The second is the count data and can be
+#directly used in the input to NanoStringNorm.
+
+biopsyMirDf<-rccfiles$x
+
+phenoDat<-colnames(biopsyMirDf)[4:48]
+
+phenoDat1<-as.data.frame(matrix(unlist(strsplit(phenoDat,"_")), nrow=45, ncol=6, byrow=TRUE))
+row.names(phenoDat1)<-phenoDat
+colnames(phenoDat1)<-c("NDP_number","Condition","Sex","Lane","Tissue_type","Run_date")
+phenoDat1$Cartridge<-substr(phenoDat1$Lane,1,1)########### however, A and B are repeated as cartridge names, hence they cannot be same as batch
+phenoDat1<-phenoDat1[order(phenoDat1$Cartridge, phenoDat1$Lane),]
+```
+
+```{r}
+
+setwd("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/")
+
+phenoDat1$status<-phenoDat1$Condition
+phenoDat1$status<-gsub("IBSC","IBS",phenoDat1$status)
+phenoDat1$status<-gsub("IBSD","IBS",phenoDat1$status)
+TS1 = factor(phenoDat1$status,levels=c("IBS","HC"))
+cond <- model.matrix(~0+TS1)
+colnames(cond) <- levels(TS1)
+cond1<-as.data.frame(cond)
+cond1$IBS<-gsub("1","2",cond1$IBS)
+cond1$HC<-gsub("1","2",cond1$HC)
+cond1$IBS<-gsub("0","1",cond1$IBS)
+cond1$HC<-gsub("0","1",cond1$HC)
+
+row.names(cond1)<-phenoDat
+cond1[,1]<-as.numeric(as.character(cond1[,1]))
+cond1[,2]<-as.numeric(as.character(cond1[,2]))
+
+
+#positive control and negative control sanity check
+
+
+posC<-biopsyMirDf[1:6,]
+row.names(posC)<-posC[,2]
+
+
+posC<-posC[,4:48]
+posC1<-t(posC[sort(row.names(posC)),])
+
+png("boxplot.posControls.png")
+boxplot(posC1) 
+dev.off()
+```
+
+```{r Figure 1a: Box plot for Positive Controls, fig.width=4, fig.height=4}
+boxplot(posC1) 
+
+```
+
+```{r Figure 1b: Individual plots for Positive Controls, fig.width=4,fig.height=4}
+for (i in 1:45)
+{
+  
+  # png(paste(i,"posCon.png"))	
+  barplot(posC1[i,]) # to look at individual samples
+  # dev.off()
+}
+```
+
+```{r}
+negC<-biopsyMirDf[7:12,]
+row.names(negC)<-negC[,2]
+negC<-t(negC[,4:47])
+
+png("boxplot.negControls.png")
+boxplot(negC) 
+dev.off()
+```
+
+```{r Figure 2: Box plot of Negative Controls ,fig.width=4,fig.height=4,echo=FALSE,message=FALSE,include=TRUE}
+boxplot(negC) 
+```
+
+```{r}
+biopsyMirDf1<-biopsyMirDf[-11,]
+
+nano.norm<-NanoStringNorm(biopsyMirDf1,anno = NA,header = NA,
+                          Probe.Correction.Factor ='none',CodeCount ='geo.mean',
+                          Background = 'mean',SampleContent =	'top.geo.mean',	OtherNorm =	'none',
+                          round.values = TRUE,
+                          is.log = FALSE,
+                          take.log = FALSE,
+                          return.matrix.of.endogenous.probes = FALSE,
+                          traits = NA,
+                          predict.conc = TRUE,
+                          verbose = TRUE,
+                          genes.to.fit,
+                          genes.to.predict,
+                          guess.cartridge = TRUE
+)
+
+
+# A6145_HC_F_F09_Tis_Apr15 needs to be removed high positive normalization factor,14  (2 others have high, but little over 3 )
+
+norm.data<-nano.norm$normalized.data
+norm.data1<-subset(norm.data, norm.data$Code.Class!="Negative" & norm.data$Code.Class!="Housekeeping" & norm.data$Code.Class!="Positive" & norm.data$Code.Class!="SpikeIn")
+
+norm.data2<-norm.data1[,4:48]
+norm.data2$A6145_HC_F_F09_Tis_Apr15 <- NULL
+
+png('NanoStringNorm_Example_Plots_biopsy_ibs_hc_%03d_topgeo-positivecontoldrop', units ='in',  height = 6,   width = 6, res = 250, pointsize = 10);
+Plot.NanoStringNorm( x = nano.norm,
+                     label.best.guess = TRUE,
+                     plot.type = c('cv','mean.sd','RNA.estimates','volcano','missing','norm.factors','positive.controls','batch.effects'))
+dev.off()
+```
+
+```{r Figure 3: Quality control plots, fig.width=4,fig.height=4,echo=FALSE,message=FALSE,include=TRUE}
+Plot.NanoStringNorm( x = nano.norm,
+                     label.best.guess = TRUE,
+                     plot.type = c('cv','mean.sd','RNA.estimates','volcano','missing','norm.factors','positive.controls','batch.effects'))
+```
+
+```{r}
+raw.data<-nano.norm$raw.data
+
+rawdata1<-raw.data[,4:48]
+raw.data1<-rawdata1[,row.names(phenoDat1)]
+
+mean1.sam<-apply(raw.data1,2,mean)
+png("boxplot_mirna_raw-dropposcontrol.png", height=1000, width=1000, res=200)
+boxplot(raw.data1,horizontal=FALSE,axes=FALSE,cex=0.2,outline=FALSE,xlab="x-axis label", ylab="y-axis label",las=1)
+axis(1,cex.axis=0.5)
+axis(2,cex.axis=0.5) 
+dev.off()
+#norm.data1<-norm.data[,4:48]
+phenoDat1 <- phenoDat1[row.names(phenoDat1)%in%colnames(norm.data2),]
+norm.data3<-norm.data2[,row.names(phenoDat1)]
+mean2.sam<-apply(norm.data3,2,mean)
+
+png("boxplot_mirna_norm-droppositivecontrol.png", height=1000, width=1000, res=200)
+boxplot(norm.data3,horizontal=FALSE,axes=TRUE,cex=0.2,outline=FALSE,xlab="x-axis label", ylab="y-axis label",las=1)
+axis(1,cex.axis=0.5)
+axis(2,cex.axis=0.5) 
+dev.off()
+save(norm.data3,norm.data2,raw.data1,phenoDat1, file="biopsy_data.Rda")
+```
+
+```{r Figure 4A and 4B: Box plot of raw and normalized data, fig.width=4,fig.height=4,echo=FALSE,message=FALSE,include=TRUE}
+
+boxplot(raw.data1,horizontal=FALSE,axes=FALSE,cex=0.2,outline=FALSE,xlab="x-axis label", ylab="y-axis label",las=1)
+axis(1,cex.axis=0.5)
+axis(2,cex.axis=0.5) 
+
+boxplot(norm.data3,horizontal=FALSE,axes=TRUE,cex=0.2,outline=FALSE,xlab="x-axis label", ylab="y-axis label",las=1)
+axis(1,cex.axis=0.5)
+axis(2,cex.axis=0.5) 
+```
+
+```{r}
+#load("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/raw_data/all_rccs/tissueRCC/norm.data1.biopsy.rda")
+
+dim(norm.data3)
+# [1] 800  44
+
+##### expressed in patietns or controls ---50% of the samples must pass the background in either cases or controls
+
+y <- as.matrix(Expressed(norm.data3) )
+y1 <- subset(y,y[,1] == TRUE)
+norm.data4 <- norm.data3[row.names(norm.data3)%in%row.names(y1),]
+
+dim(norm.data4)
+# [1] 250  45
+save(norm.data4, file="norm.data4.rda")
+write.table(norm.data4, file="norm.data4.ibs.csv", sep=",")
+```
+
+```{r}
+library(ggplot2)
+norm.data4.t<-t(norm.data4)
+norm.data4.t<-as.data.frame(norm.data4.t)
+norm.data4.t$Condition<-phenoDat1$status
+
+#parametric or non parametric? generate a q-q plot
+meanDat<-phenoDat1
+meanDat$mean1<-mean2.sam
+qqplot1<-qqplot.data(meanDat$mean1)
+ggsave(qqplot1, file="qqplotbiopsy.mean.IBS1.png")
+```
+
+```{r  Figure 5: qqplot to test normality of distribution, fig.width=4,fig.height=4,echo=FALSE,message=FALSE,include=TRUE}
+qqplot1
+```
+
+```{r}
+exprs1<-norm.data4
+colnames(exprs1)<-substr(colnames(exprs1),1,5)
+
+#import phenotype data
+
+row.names(phenoDat1)<-phenoDat1[,1]
+
+match(row.names(phenoDat1),colnames(exprs1))
+pData <- as.matrix(phenoDat1[,2]); row.names(pData)=row.names(phenoDat1); colnames(pData)="id"
+pData<-(as.data.frame(pData))
+
+phenoData <- new("AnnotatedDataFrame", data=pData)
+
+exprDat<-new("ExpressionSet", exprs=as.matrix(exprs1), phenoData=phenoData)
+
+#expressionset
+TS = factor(pData(phenoData)$id,levels=c("IBSC","IBSD","HC"))
+design <- model.matrix(~0+TS)
+colnames(design) <- levels(TS)
+v <- voom(exprs(exprDat),design,plot=TRUE)
+fit <- lmFit(v, design)
+
+#contrast matrix
+cont.matrix <- makeContrasts(IBS_HC = (IBSC+IBSD)/2-HC, IBSC-HC, IBSD-HC, IBSD-IBSC, levels=design)
+fit2 <- contrasts.fit(fit, cont.matrix)
+ibs_fit2 <- eBayes(fit2)
+
+png("IbsMirbiopsyVolca1.png")
+volcanoplot(ibs_fit2)
+dev.off()
+```
+
+```{r  Figure 6: volcano_plot IBS_HC, IBS-C_HC, IBS-D_HC, IBS-C_IBS-D, fig.width=4,fig.height=4,echo=FALSE,message=FALSE,include=TRUE}
+volcanoplot(ibs_fit2, coef=1, xlab="Log Fold Change", ylab="-log P value")
+volcanoplot(ibs_fit2, coef=2, xlab="Log Fold Change", ylab="-log P value")
+volcanoplot(ibs_fit2, coef=3, xlab="Log Fold Change", ylab="-log P value")
+volcanoplot(ibs_fit2, coef=4, xlab="Log Fold Change", ylab="-log P value")
+```
+
+```{r}
+# Differentially expressed genes	
+topTable(ibs_fit2, number=10, coef=1)
+# write.fit(ibs_fit2, results = NULL, file = "AllResults_biopsy.csv", method = "separate", sep = ",")
+resultsIBS=topTable(ibs_fit2, number=250, coef = 1)
+indiv.P.values <- ibs_fit2$p.value
+indiv.q.values <- apply(ibs_fit2$p.value, 2, p.adjust, method="fdr")
+
+ibs_hc_toptable <- topTable(ibs_fit2, number=250, coef = 1)
+ibsC_hc_toptable <- topTable(ibs_fit2, number=250, coef = 2)
+ibsC_hc_toptable <- ibsC_hc_toptable[row.names(ibs_hc_toptable),]
+ibsD_hc_toptable <- topTable(ibs_fit2, number=250, coef = 3)
+ibsD_hc_toptable <- ibsD_hc_toptable[row.names(ibs_hc_toptable),]
+ibsC_ibsD_toptable <- topTable(ibs_fit2, number=250, coef = 4)
+ibsC_ibsD_toptable <- ibsC_ibsD_toptable[row.names(ibs_hc_toptable),]
+
+indiv.FC <- apply(cbind(ibs_hc_toptable[,1], ibsC_hc_toptable[,1], ibsD_hc_toptable[,1], ibsC_ibsD_toptable[,1]),2,foldChange)
+
+pvalues<-cbind(indiv.P.values, indiv.q.values)
+colnames(pvalues) <- c("IBS_HC_p",  "IBSC_HC_p", "IBSD_HC_p", "IBSD_IBSC_p", "IBS_HC_q", "IBSC_HC_q", "IBSD_HC_q", "IBSD_IBSC")
+
+colnames(indiv.FC) <- c("FC_IBS_HC","FC_IBS_C_HC","FC_IBS_D_HC","FC_IBS_D_IBS_C")
+row.names(indiv.FC) <- row.names(resultsIBS)
+pMirRes <- merge(indiv.FC, pvalues, by = "row.names")
+row.names(pMirRes) <- pMirRes[,1]
+pMirRes$Row.names <- NULL
+
+# SigRes <- tableSig(pMirRes[,c(9:20)])
+# SigRes
+
+ibs_hc_0.05 <- subset(pMirRes, pMirRes$IBS_HC_p <= 0.05); dim(ibs_hc_0.05)
+ibs_hc_0.05<- ibs_hc_0.05[order(ibs_hc_0.05$IBS_HC_p),]
+ibs_C_hc_0.05 <- subset(pMirRes, pMirRes$IBSC_HC_p <= 0.05); dim(ibs_C_hc_0.05)
+ibs_D_hc_0.05 <- subset(pMirRes, pMirRes$IBSD_HC_p <= 0.05); dim(ibs_D_hc_0.05)
+ibs_DC_0.05 <- subset(pMirRes, pMirRes$IBSD_IBSC_p <= 0.05); dim(ibs_DC_0.05)
+
+save(resultsIBS, file="resultsIBSbiopsy.rda")
+resultsIBS$ibs_cont_sig0.05<-resultsIBS$P.Value<0.05
+resultsIBS$fdr_0.1<-resultsIBS$adj.P.Val<0.1
+
+SignP0.05<-subset(resultsIBS, resultsIBS$ibs_cont_sig0.05==TRUE); dim(SignP0.05)
+Sign_q<-subset(resultsIBS, resultsIBS$fdr_0.1==TRUE); dim(Sign_q)
+
+save(ibs_hc_0.05,ibs_C_hc_0.05,ibs_D_hc_0.05,ibs_DC_0.05, pMirRes,  file="sigBiopsyMirna.Rda")
+write.table(ibs_hc_0.05, file="ibs_hc_0.05.csv", sep=",", col.names=NA)
+write.table(ibs_C_hc_0.05, file="ibs_C_hc_0.05.csv", sep=",", col.names=NA)
+write.table(ibs_D_hc_0.05, file="ibs_D_hc_0.05.csv", sep=",", col.names=NA)
+write.table(ibs_DC_0.05, file="ibs_DC_0.05.csv", sep=",", col.names=NA)
+# write.table(pMirRes, file="ibs_DC_0.05.csv", sep=",", col.names=NA)
+```
+# pubmed search for articles related to the miRNAs of interest
+```{r}
+# some of the miRNAs have a low fold change: implement a foldchange cutoff of 1.5 fold for RTPCR
+
+SigRes.fc <- subset(SigRes, SigRes$FC_IBS_HC>=1.5 | SigRes$FC_IBS_C_HC>=1.5 |SigRes$FC_IBS_D_HC>=1.5 | SigRes$FC_IBS_D_IBS_C>=1.5 | SigRes$FC_IBS_HC<=-1.5 | SigRes$FC_IBS_C_HC<=-1.5 |SigRes$FC_IBS_D_HC<=-1.5 | SigRes$FC_IBS_D_IBS_C<=-1.5)
+
+uniq.mirna <- row.names(subset(SigRes.fc, duplicated(gsub('\\|.*',"",row.names(SigRes.fc))) == FALSE))
+uniq.mirna <- gsub('\\|.*',"",uniq.mirna)
+uniq.mirna <- gsub('-3p',"",uniq.mirna)
+uniq.mirna <- gsub('-5p',"",uniq.mirna)
+
+library(RISmed)
+
+for ( i in 1:length(uniq.mirna))
+    {  
+  res<- EUtilsSummary(uniq.mirna[i] , type="esearch", db="pubmed", datetype='pdat', mindate=2000,maxdate=2016, retmax=500)
+  pubmedID <- QueryId(res)
+    records <-EUtilsGet(res)
+  Atitle <- unlist(ArticleTitle(records))
+pubmed_data <- data.frame(cbind('Title'=Atitle,'Pubmed_ID'= pubmedID, 'Abstract'=AbstractText(records)))
+write.table(pubmed_data, file = paste(uniq.mirna[i],"pubmed.csv"), sep = ",", col.names = NA)
+}
+
+res <- EUtilsSummary(c("hsa-miR-519e-3p") , type="esearch", db="pubmed", datetype='pdat', mindate=2000, maxdate=2015, retmax=500)
+QueryCount(res)
+summary(res)
+
+# t<-ArticleTitle(EUtilsGet(res))
+# typeof(t)
+# head(t,1)
+# 
+# QueryId(res)
+# 
+# records<- EUtilsGet(res)
+# class(records)
+# pubmed_data <- data.frame('Title'=ArticleTitle(records),'Abstract'=AbstractText(records))
+# head(pubmed_data,1)
+```
+# Common deregulated miRNAs between plasma and tissue
+```{r}
+sigResPlasma <- read.delim("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/Plasma_miR/SigRes_plasma.csv", sep = ",", row.names = 1)
+
+sigResBiopsy <- read.delim("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/IbsMirbiopsy_SigRes.csv", sep = ",", row.names = 1)
+
+com1 <- sigResPlasma[row.names(sigResPlasma)%in%row.names(sigResBiopsy),]
+com2 <- sigResBiopsy[row.names(sigResBiopsy)%in%row.names(sigResPlasma),]
+
+com1[,c(1:4,9:13)]
+com <- com2[row.names(com1),]
+commonMirs <- unique(matrix(unlist(strsplit(row.names(com1),"\\|")),nrow=dim(com)[1], ncol = 2, byrow = TRUE)[,1])
+# they are deregulated in the same direction except miR-188
+
+# 3 potential candidates hsa-miR-548ah-5p; hsa-miR-363-3p; hsa-miR-219-5p
+# to be validated by real-time PCR
+
+```
+# Correlation plots between plasma and biopsy
+```{r}
+load("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/norm.data4.rda")# biopsy mirna data
+biopsy.dat <- norm.data4 
+row.names(biopsy.dat) <- matrix(unlist(strsplit(row.names(biopsy.dat),"\\|")),nrow=dim(biopsy.dat)[1], ncol = 2, byrow = TRUE)[,1]
+colnames(biopsy.dat) <- substr(colnames(biopsy.dat),1,5)
+comBiopsyDat <- biopsy.dat[row.names(biopsy.dat)%in%commonMirs,]
+
+
+load("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/Plasma_miR/norm.data4.rda")
+plasma.dat <- norm.data4
+row.names(plasma.dat) <- matrix(unlist(strsplit(row.names(plasma.dat),"\\|")),nrow=dim(plasma.dat)[1], ncol = 2, byrow = TRUE)[,1]
+colnames(plasma.dat) <- substr(colnames(plasma.dat),1,5)
+comPlasmaDat <- plasma.dat[row.names(plasma.dat)%in%commonMirs,]
+comPlasmaDat <- comPlasmaDat[row.names(comBiopsyDat),]
+comPlasmaDat1 <- comPlasmaDat[,colnames(comPlasmaDat) %in% colnames(comBiopsyDat)]; dim(comPlasmaDat1)
+comBiopsyDat1 <- comBiopsyDat[,colnames(comBiopsyDat) %in% colnames(comPlasmaDat1)]; dim(comBiopsyDat1)
+comBiopsyDat1 <- comBiopsyDat1[,colnames(comPlasmaDat1)]
+match(row.names(comBiopsyDat1), row.names(comPlasmaDat1))
+match(colnames(comBiopsyDat1), colnames(comPlasmaDat1))
+
+comBiopsyDat1 <- t(comBiopsyDat1)
+comPlasmaDat1 <- t(comPlasmaDat1)
+colnames(comBiopsyDat1) <- paste(colnames(comBiopsyDat1),"Biopsy", sep = "_")
+colnames(comBiopsyDat1) <- gsub("-","_",colnames(comBiopsyDat1))
+colnames(comPlasmaDat1) <- paste(colnames(comPlasmaDat1),"Plasma", sep = "_")
+colnames(comPlasmaDat1) <- gsub("-","_",colnames(comPlasmaDat1))
+phenoDat1.com <- phenoDat1[row.names(phenoDat1)%in%row.names(comPlasmaDat1),]
+phenoDat1.com <- phenoDat1.com[row.names(comPlasmaDat1),]
+
+dat.mat <- cbind(comBiopsyDat1, comPlasmaDat1, phenoDat1.com[,c(2,3,8)])
+pm <- ggpairs(tips)
+p1 <- ggplot(dat.mat, aes(hsa_miR_451a_Plasma, hsa_miR_451a_Biopsy, color = Condition, size =3))
+p1 + geom_point()
+```
+# miRwalk targtes and differentially regulated miRNAs
+```{r}
+mRNA <- read.delim("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/miRNA_mRNA_integration/mRNA_IBS_HC_May2016_Beth.csv", sep = ",", row.names = 1); dim(mRNA)
+
+sig_mrna <- subset(mRNA, mRNA$P.Value <=0.05); dim(sig_mrna)
+
+miRwalkValTar <- read.delim("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/miRNA_Selection/miRNA_targets_miRwalk.csv", sep = ","); dim(miRwalkValTar)
+
+miRNAvalTar <- merge(sig_mrna, miRwalkValTar, by.x = "GeneSymbol", by.y = "Gene")
+miRNAvalTar <- miRNAvalTar[order(miRNAvalTar$miRNA),]
+write.csv(miRNAvalTar, file = "C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/miRNA_Selection/ValidatedMirTrColmRNA.csv")
+```
+# Heatmap for DE miRNAs
+```{r}
+library(ComplexHeatmap)
+library(RColorBrewer)
+library(circlize)
+setwd("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/")
+
+ibs_hc_0.05 <- read.delim("ibs_hc_0.05.csv", sep = ","); dim(ibs_hc_0.05)
+row.names(ibs_hc_0.05)  <- matrix(unlist(strsplit(as.character(ibs_hc_0.05$X),"\\|")), nrow = dim(ibs_hc_0.05)[1], ncol= 2, byrow = TRUE )[,1]
+load("norm.data4.rda")
+row.names(norm.data4)<- matrix(unlist(strsplit(as.character(row.names(norm.data4)),"\\|")), nrow = dim(norm.data4)[1], ncol= 2, byrow = TRUE )[,1]
+dat.mir <- norm.data4[row.names(norm.data4)%in% row.names(ibs_hc_0.05),]
+colnames(dat.mir) <- substr(colnames(dat.mir),1,5)
+dat.mir <- dat.mir[row.names(ibs_hc_0.05),]
+dat.mir <- dat.mir[,row.names(phenoDat1)]
+match(colnames(dat.mir),row.names(phenoDat1))
+pval <- ibs_hc_0.05$IBS_HC_p
+colVar <- phenoDat1$Condition
+# color1 <- ifelse(colVar == "IBSD","purple",ifelse(colVar == "IBSC","blue","yellow"))
+ha <- HeatmapAnnotation(df = data.frame(BH_subtype = colVar))
+mat_scaled = t(apply(dat.mir, 1, scale))
+colnames(mat_scaled) <- colnames(dat.mir)
+
+set.seed(1022)
+Heatmap(mat_scaled, name = "Expression", km = 5, col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")),
+    top_annotation = ha, top_annotation_height = unit(4, "mm"), 
+    show_row_names = TRUE, show_column_names = FALSE) +
+Heatmap(pval, name = "P Value", show_row_names = FALSE, width = unit(5, "mm")) 
+
+```
+#IBS HC separately; heatmaplist
+```{r}
+ibs <- mat_scaled[,colnames(mat_scaled)%in%row.names(phenoDat1[phenoDat1$Condition != "HC",])]
+hc <- mat_scaled[,colnames(mat_scaled)%in%row.names(phenoDat1[phenoDat1$Condition == "HC",])]
+
+colvar1 <- phenoDat1[phenoDat1$Condition != "HC",]$Condition
+ha1 <- HeatmapAnnotation(df = data.frame(BH_subtype = colvar1))
+
+colvar2 <- phenoDat1[phenoDat1$Condition == "HC",]$Condition
+ha2 <- HeatmapAnnotation(df = data.frame(BH_subtype = colvar2))
+
+ht1 = Heatmap(ibs, name = "IBS", km = 2, top_annotation = ha1, top_annotation_height = unit(2, "mm"), show_column_names = FALSE, show_row_names = FALSE,col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")))
+ht2 = Heatmap(hc, name = "Healthy controls", top_annotation = ha2, top_annotation_height = unit(2, "mm"),show_column_names = FALSE, show_row_names = TRUE,col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")))
+ht3 = Heatmap(pval, name = "P Value", show_row_names = FALSE, width = unit(5, "mm"),col = colorRamp2(c(0.00, 0.01, 0.05), c("green", "white", "red")))
+class(ht1); class(ht2)
+
+ht_list = ht1 + ht2 +ht3 
+class(ht_list)
+png("ibs_hc_separate_hms.png", res = 300, height = 2000, width = 3000)
+draw(ht_list, row_title = "Differentially expressed miRNAs", row_title_gp = gpar(col = "red"),
+    column_title = "IBS and Healthy control Samples", column_title_side = "bottom")
+dev.off()
+```
+#IBS bh separately; heatmaplist
+```{r}
+ibs.c <- mat_scaled[,colnames(mat_scaled)%in%row.names(phenoDat1[phenoDat1$Condition == "IBSC",])]
+ibs.d <- mat_scaled[,colnames(mat_scaled)%in%row.names(phenoDat1[phenoDat1$Condition == "IBSD",])]
+hc <- mat_scaled[,colnames(mat_scaled)%in%row.names(phenoDat1[phenoDat1$Condition == "HC",])]
+
+ht1 = Heatmap(ibs.c, name = "IBS-C", km = 2,col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")))
+ht2 = Heatmap(ibs.d, name = "IBS-D", km = 2,col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")))
+ht3 = Heatmap(hc, name = "Healthy controls",col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")))
+ht4 = Heatmap(pval, name = "P Value", show_row_names = FALSE, width = unit(5, "mm"),col = colorRamp2(c(0.00, 0.01, 0.05), c("green", "white", "red"))) 
+
+class(ht1); class(ht2)
+
+ht_list = ht1 + ht2 +ht3 +ht4
+class(ht_list)
+png("ibs_bh_hc_separate_hms1.png", res = 300, height = 2000, width = 3000)
+draw(ht_list, row_title = "Differentially expressed miRNAs", row_title_gp = gpar(col = "red"),
+    column_title = "IBS and Healthy control Samples", column_title_side = "bottom")
+dev.off()
+```
+
+# association between traits and plasma and biopsy
+
+```{r}
+
+```
+

@@ -1,0 +1,40 @@
+---
+title: "plamsa and biopsy miRNA manuscript"
+author:
+- affiliation: Division of Digestive Diseases, University of California, Los Angeles.
+  name: Swapna Mahurkar-Joshi
+- affiliation: Division of Digestive Diseases, University of California, Los Angeles.
+  name: Elizabeth Videlock
+- affiliation: Division of Digestive Diseases, University of California, Los Angeles.
+  name: Charalobos Pothoulakis
+- affiliation: Division of Digestive Diseases, University of California, Los Angeles.
+  name: Dimitrios Iliopoulos
+- affiliation: Division of Digestive Diseases, University of California, Los Angeles.
+  name: Emeran A Mayer
+- affiliation: Division of Digestive Diseases, University of California, Los Angeles.
+  name: Lin Chang
+date: '`r format(Sys.time(), ''%B %d, %Y'')`'
+output:
+  word_document: default
+  pdf_document:
+    citation_package: natbib
+    fig_caption: yes
+    keep_tex: yes
+    latex_engine: pdflatex
+    template: ~/Dropbox/miscelanea/svm-r-markdown-templates/svm-latex-ms.tex
+biblio-style: apsr
+fontfamily: TimesNewRoman
+fontsize: 11pt
+geometry: margin=1in
+keywords: Irritable bowel syndrome, microRNA, hsa-miR-363-3p
+bibliography: ~/Dropbox/master.bib
+thanks: Replication files are available on the author's Github account...
+Abstract: MicroRNAs are known to play a important role in pathophysiology of IBS.
+  We compared microRNA profiles of 30 IBS patients and 15 healthy controls (HCs) in
+  plasma as well as colonic mucosal biopsies of all subjects. We found miR-150 among
+  other miRNAs to be deregulated in circulation as reported previously. Thirty nine
+  microRNAs were differentially regulated between IBS and HCs in biopsy samples. Five
+  miRNAs were differentially expressed both in circulation as well as biopsies. Association
+  of clinical traits such as severity of IBS symtoms tested for circulating as well
+  as biopsy miRNA revealed....
+---

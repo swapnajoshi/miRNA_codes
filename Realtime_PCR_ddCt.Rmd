@@ -1,0 +1,81 @@
+---
+title: "Realtime_PCR_ddCt"
+author: "Swapna Mahurkar-Joshi"
+date: "January 26, 2017"
+output: html_document
+---
+
+######## libraries and packages
+
+```{r}
+source("https://bioconductor.org/biocLite.R")
+biocLite("ddCt")
+```
+
+
+```{r}
+library(ddCt)
+library(ggplot2)
+```
+
+```{r}
+setwd("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSrealtimePCRproject/Realtime_PCR_analysis/")
+ct <- read.csv("mir219inhOverExCt.csv")
+
+# subtract average HK CT from each sample
+
+
+# Average of untreated and scramble will be used as reference to subtract from all CTs. 
+
+```
+
+```{r}
+# plot Ct values for all
+ct <- read.csv("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/IBSrealtimePCRproject/Realtime_PCR_analysis/mir219inhOverExCt.csv")
+
+# inhibitor 219 scramble 219 and untreated controls
+ct1<- ct[c(1:3, 7:9, 13:14)]
+p <- ggplot(data=ct, aes(x=Sample, y=Mean.Cq, fill=Condition)) +
+    geom_bar(stat="identity", position=position_dodge(), colour="black") +
+    scale_fill_manual(values=c("#999999", "#E69F00", "#89998A", "#898999", "#998990"))
+
+# normalized delta deltdeltatCT
+ct.n <- read.csv("mir219inhOverEx_normalized_deltadetaCt.csv")
+# ct1<- ct[c(1:3, 7:9, 13:14)]
+ct.n$logRelative.Normalized.Expression <- log(ct.n$Relative.Normalized.Expression,2)
+
+ct.n.inh <- ct.n[c(1,2,3,7,8,9,13,14),]
+ct.n.ovr <- ct.n[c(4,5,6,10,11,12,13,14),]
+
+p <- ggplot(data=ct.n.inh, aes(x=Sample, y=logRelative.Normalized.Expression, fill=Condition)) +
+    geom_bar(stat="identity", position=position_dodge(), colour="black") + 
+    scale_fill_manual(values=c("#999900", "#E69F00", "#89998A", "#898999", "#998990", "#989989"))
+
+p1 <- ggplot(data=ct.n.ovr, aes(x=Sample, y=logRelative.Normalized.Expression, fill=Condition)) +
+    geom_bar(stat="identity", position=position_dodge(), colour="black") + 
+    scale_fill_manual(values=c("#999900", "#E69F00", "#89998A", "#898999", "#998990", "#989989"))
+
+```
+
+
+```{r}
+# remove experiment1 for inh as well as over 
+
+# normalized delta deltdeltatCT
+ct.n <- read.csv("mir219inhOverEx_normalized_deltadetaCt.csv")
+# ct1<- ct[c(1:3, 7:9, 13:14)]
+ct.n$logRelative.Normalized.Expression <- log(ct.n$Relative.Normalized.Expression,2)
+
+ct.n.inh <- ct.n[c(2,3,8,9),]
+ct.n.ovr <- ct.n[c(5,6,11,12),]
+
+
+p <- ggplot(data=ct.n.inh, aes(x=Sample, y=logRelative.Normalized.Expression, fill=Condition)) +
+    geom_bar(stat="identity", position=position_dodge(), colour="black") + 
+    scale_fill_manual(values=c("#999900", "#E69F00", "#89998A", "#898999", "#998990", "#989989"))
+
+p1 <- ggplot(data=ct.n.ovr, aes(x=Sample, y=logRelative.Normalized.Expression, fill=Condition)) +
+    geom_bar(stat="identity", position=position_dodge(), colour="black") + 
+    scale_fill_manual(values=c("#999900", "#E69F00", "#89998A", "#898999", "#998990", "#989989"))
+
+```

@@ -1,0 +1,498 @@
+---
+title: "miRNA_plasma_6152016"
+author: "Swapna Mahurkar-Joshi"
+date: "June 15, 2016"
+output: word_document
+fig_caption: true
+---
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r, , message=F, warning=F, echo = FALSE}
+#Funcitons and libraries:
+########
+Wilcox.test <- function(x, s1, s2) {
+  x1 <- x[s1]
+  x2 <- x[s2]
+  x1 <- as.numeric(x1)
+  x2 <- as.numeric(x2)
+  wx.out <- wilcox.test(x1, x2, alternative = "two.sided",
+                        paired = FALSE)
+  p.Wilcox <- as.numeric(wx.out$p.value)
+  return(p.Wilcox)
+}
+########
+qqplot.data <- function (vec) # argument: vector of numbers
+{
+  # following four lines from base R's qqline()
+  y <- quantile(vec[!is.na(vec)], c(0.25, 0.75))
+  x <- qnorm(c(0.25, 0.75))
+  slope <- diff(y)/diff(x)
+  int <- y[1L] - slope * x[1L]
+  
+  d <- data.frame(resids = vec)
+  
+  ggplot(d, aes(sample = resids)) + stat_qq() + geom_abline(slope = slope, intercept = int)
+  
+}
+
+########
+Expressed <- function(x) {rowSums(x[,grep("IBS", colnames(x))] > 0) >= dim(x)[2]/5 | rowSums(x[,grep("HC",colnames(x))] > 0) >= dim(x)[2]/5 }
+
+#########
+foldChange <- function(x) {ifelse (x >= 0, round(2^x,2), round(-1*2^(abs(x)),2))}
+
+########
+tableSig <- function(x)
+{ a1 <- subset(x, x[,1] < 0.05)
+a2 <- subset(x, x[,2] < 0.05)
+a3 <- subset(x, x[,3] < 0.05)
+a4 <- subset(x, x[,4] < 0.05) 
+y <- rbind( round(a1,3), round(a2,3), round(a3,3), round(a4,3))
+y <- as.data.frame(y)
+z <- colnames(x[,1:4])
+Comparison <- c(c(rep(z[1], dim(a1)[1])),rep(z[2], dim(a2)[1]), rep(z[3], dim(a3)[1]), rep(z[4], dim(a4)[1]))
+y$Comparison <- Comparison
+y <- y[order(y[,1],y[,2],y[,3],y[,4]),]
+return(y)  
+}
+
+########
+# source("http://bioconductor.org/biocLite.R")
+# biocLite("lattice")
+library(NanoStringNorm)
+library(ggplot2)
+# library(vsn)
+library(ggplot2)
+```
+
+```{r}
+setwd("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/raw_data/all_rccs/Serum_RCC/")
+rccfiles<-read.markup.RCC(rcc.pattern="*.RCC|*.rcc",  exclude=NULL, include = NULL, nprobes=-1)
+#Returns a list with two components. The first is the header information which contains sample IDs
+#and diagnostic information on the quality of the samples. The second is the count data and can be
+#directly used in the input to NanoStringNorm.
+
+serumMirDf<-rccfiles$x
+
+phenoDat<-colnames(serumMirDf)[4:48]
+
+phenoDat1<-as.data.frame(matrix(unlist(strsplit(phenoDat,"_")), nrow=45, ncol=6, byrow=TRUE))
+row.names(phenoDat1)<-phenoDat
+colnames(phenoDat1)<-c("NDP_number","Condition","Sex","Lane","Tissue_type","Run_date")
+phenoDat1$Cartridge<-substr(phenoDat1$Lane,1,1)########### however, A and B are repeated as cartridge names, hence they cannot be same as batch
+phenoDat1<-phenoDat1[order(phenoDat1$Cartridge, phenoDat1$Lane),]
+```
+
+```{r}
+setwd("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/Plasma_miR/")
+
+phenoDat1$status<-phenoDat1$Condition
+phenoDat1$status<-gsub("IBSC","IBS",phenoDat1$status)
+phenoDat1$status<-gsub("IBSD","IBS",phenoDat1$status)
+TS1 = factor(phenoDat1$status,levels=c("IBS","HC"))
+cond <- model.matrix(~0+TS1)
+colnames(cond) <- levels(TS1)
+cond1<-as.data.frame(cond)
+cond1$IBS<-gsub("1","2",cond1$IBS)
+cond1$HC<-gsub("1","2",cond1$HC)
+cond1$IBS<-gsub("0","1",cond1$IBS)
+cond1$HC<-gsub("0","1",cond1$HC)
+
+row.names(cond1)<-phenoDat
+cond1[,1]<-as.numeric(as.character(cond1[,1]))
+cond1[,2]<-as.numeric(as.character(cond1[,2]))
+
+
+#positive control and negative control sanity check
+
+
+posC<-serumMirDf[1:6,]
+row.names(posC)<-posC[,2]
+
+
+posC<-posC[,4:48]
+posC1<-t(posC[sort(row.names(posC)),])
+
+png("boxplot.posControls.png")
+boxplot(posC1) 
+dev.off()
+```
+
+```{r Figure 1a: Box plot for Positive Controls, fig.width=4, fig.height=4}
+boxplot(posC1) 
+
+```
+
+```{r Figure 1b: Individual plots for Positive Controls, fig.width=4,fig.height=4}
+for (i in 1:45)
+{
+  
+  # png(paste(i,"posCon.png"))	
+  barplot(posC1[i,]) # to look at individual samples
+  # dev.off()
+}
+```
+
+```{r}
+negC<-serumMirDf[7:12,]
+row.names(negC)<-negC[,2]
+negC<-t(negC[,4:48])
+
+png("boxplot.negControls.png")
+boxplot(negC) 
+dev.off()
+```
+
+```{r Figure 2: Box plot of Negative Controls ,fig.width=4,fig.height=4,echo=FALSE,message=FALSE,include=TRUE}
+boxplot(negC) 
+```
+
+```{r}
+serumMirDf1<-serumMirDf[-7,]
+
+nano.norm<-NanoStringNorm(serumMirDf1,anno = NA,header = NA,
+                          Probe.Correction.Factor ='none',CodeCount ='geo.mean',
+                          Background = 'mean.2sd',SampleContent =	'top.geo.mean',	OtherNorm =	'none',
+                          round.values = TRUE,
+                          is.log = FALSE,
+                          take.log = FALSE,
+                          return.matrix.of.endogenous.probes = FALSE,
+                          traits = NA,
+                          predict.conc = TRUE,
+                          verbose = TRUE,
+                          genes.to.fit,
+                          genes.to.predict,
+                          guess.cartridge = TRUE
+)
+
+
+# A5765_IBSC_F_D02_Ser_Apr15 needs to be removed high positive normalization factor,12  (5 others have high, but with in 5) )
+
+norm.data<-nano.norm$normalized.data
+norm.data1<-subset(norm.data, norm.data$Code.Class!="Negative" & norm.data$Code.Class!="Housekeeping" & norm.data$Code.Class!="Positive" & norm.data$Code.Class!="SpikeIn")
+
+norm.data2<-norm.data1[,4:48]
+norm.data2$A5765_IBSC_F_D02_Ser_Apr15 <- NULL
+
+png('NanoStringNorm_Example_Plots_serum_ibs_hc_%03d_topgeo-positivecontoldrop_2sdbckg.png', units ='in',  height = 6,   width = 6, res = 250, pointsize = 10);
+Plot.NanoStringNorm( x = nano.norm,
+                     label.best.guess = TRUE,
+                     plot.type = c('cv','mean.sd','RNA.estimates','volcano','missing','norm.factors','positive.controls','batch.effects'))
+dev.off()
+```
+
+```{r Figure 3: Quality control plots, fig.width=4,fig.height=4,echo=FALSE,message=FALSE,include=TRUE}
+Plot.NanoStringNorm( x = nano.norm,
+                     label.best.guess = TRUE,
+                     plot.type = c('cv','mean.sd','RNA.estimates','volcano','missing','norm.factors','positive.controls','batch.effects'))
+```
+
+```{r}
+raw.data<-nano.norm$raw.data
+
+rawdata1<-raw.data[,4:48]
+raw.data1<-rawdata1[,row.names(phenoDat1)]
+
+mean1.sam<-apply(raw.data1,2,mean)
+png("boxplot_mirna_raw-dropposcontrol.png", height=1000, width=1000, res=200)
+boxplot(raw.data1,horizontal=FALSE,axes=FALSE,cex=0.2,outline=FALSE,xlab="x-axis label", ylab="y-axis label",las=1)
+axis(1,cex.axis=0.5)
+axis(2,cex.axis=0.5) 
+dev.off()
+#norm.data1<-norm.data[,4:48]
+phenoDat1 <- phenoDat1[row.names(phenoDat1)%in%colnames(norm.data2),]
+norm.data3<-norm.data2[,row.names(phenoDat1)]
+mean2.sam<-apply(norm.data3,2,mean)
+
+png("boxplot_mirna_norm-droppositivecontrol.png", height=1000, width=1000, res=200)
+boxplot(norm.data3,horizontal=FALSE,axes=TRUE,cex=0.2,outline=FALSE,xlab="x-axis label", ylab="y-axis label",las=1)
+axis(1,cex.axis=0.5)
+axis(2,cex.axis=0.5) 
+dev.off()
+save(norm.data3,norm.data2,raw.data1,phenoDat1, file="plasma_data.Rda")
+```
+
+```{r Figure 4A and 4B: Box plot of raw and normalized data, fig.width=4,fig.height=4,echo=FALSE,message=FALSE,include=TRUE}
+
+boxplot(raw.data1,horizontal=FALSE,axes=FALSE,cex=0.2,outline=FALSE,xlab="x-axis label", ylab="y-axis label",las=1)
+axis(1,cex.axis=0.5)
+axis(2,cex.axis=0.5) 
+
+boxplot(norm.data3,horizontal=FALSE,axes=TRUE,cex=0.2,outline=FALSE,xlab="x-axis label", ylab="y-axis label",las=1)
+axis(1,cex.axis=0.5)
+axis(2,cex.axis=0.5) 
+```
+
+```{r}
+#load("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/raw_data/all_rccs/Serum_RCC/norm.data1.serum.rda")
+
+dim(norm.data3)
+# [1] 800  44
+
+##### expressed in patietns or controls ---20% of the samples must pass the background in either cases or controls
+
+y <- as.matrix(Expressed(norm.data3) )
+y1 <- subset(y,y[,1] == TRUE)
+norm.data4 <- norm.data3[row.names(norm.data3)%in%row.names(y1),]
+
+dim(norm.data4)
+# [1] 374  44
+save(norm.data4, file="norm.data4.rda")
+write.table(norm.data4, file="norm.data4.2sd.ibs.csv", sep=",")
+```
+
+```{r}
+library(ggplot2)
+norm.data4.t<-t(norm.data4)
+norm.data4.t<-as.data.frame(norm.data4.t)
+norm.data4.t$Condition<-phenoDat1$status
+
+#parametric or non parametric? generate a q-q plot
+meanDat<-phenoDat1
+meanDat$mean1<-mean2.sam
+qqplot1<-qqplot.data(meanDat$mean1)
+ggsave(qqplot1, file="qqplotSerum.mean.IBS1.png")
+```
+
+```{r  Figure 5: qqplot to test normality of distribution, fig.width=4,fig.height=4,echo=FALSE,message=FALSE,include=TRUE}
+qqplot1
+```
+
+```{r}
+exprs1<-norm.data4
+colnames(exprs1)<-substr(colnames(exprs1),1,5)
+
+#import phenotype data
+
+row.names(phenoDat1)<-phenoDat1[,1]
+
+match(row.names(phenoDat1),colnames(exprs1))
+pData <- as.matrix(phenoDat1[,2]); row.names(pData)=row.names(phenoDat1); colnames(pData)="id"
+pData<-(as.data.frame(pData))
+
+phenoData <- new("AnnotatedDataFrame", data=pData)
+
+exprDat<-new("ExpressionSet", exprs=as.matrix(exprs1), phenoData=phenoData)
+
+#expressionset
+TS = factor(pData(phenoData)$id,levels=c("IBSC","IBSD","HC"))
+design <- model.matrix(~0+TS)
+colnames(design) <- levels(TS)
+v <- voom(exprs(exprDat),design,plot=TRUE)
+fit <- lmFit(v, design)
+
+#contrast matrix
+cont.matrix <- makeContrasts(IBS_HC = (IBSC+IBSD)/2-HC, IBSC-HC, IBSD-HC, IBSD-IBSC, levels=design)
+fit2 <- contrasts.fit(fit, cont.matrix)
+ibs_fit2 <- eBayes(fit2)
+
+png("IbsMirPlasmaVolca1.png")
+volcanoplot(ibs_fit2)
+dev.off()
+```
+
+```{r  Figure 6: volcano_plot IBS_HC, IBS-C_HC, IBS-D_HC, IBS-C_IBS-D, fig.width=4,fig.height=4,echo=FALSE,message=FALSE,include=TRUE}
+volcanoplot(ibs_fit2, coef=1, xlab="Log Fold Change", ylab="-log P value")
+volcanoplot(ibs_fit2, coef=2, xlab="Log Fold Change", ylab="-log P value")
+volcanoplot(ibs_fit2, coef=3, xlab="Log Fold Change", ylab="-log P value")
+volcanoplot(ibs_fit2, coef=4, xlab="Log Fold Change", ylab="-log P value")
+```
+
+```{r}
+#Differentially expressed genes	
+topTable(ibs_fit2, number=10, coef=1)
+# write.fit(ibs_fit2, results = NULL, file = "AllResults_plasma.csv", method = "separate", sep = ",")
+resultsIBS=topTable(ibs_fit2, number=374, coef = 1)
+indiv.P.values <- ibs_fit2$p.value
+indiv.q.values <- apply(ibs_fit2$p.value, 2, p.adjust, method="fdr")
+
+pvalues<-cbind(indiv.P.values, indiv.q.values)
+# lods<- ibs_fit2$lods
+colnames(pvalues) <- c("IBS_HC_p",  "IBSC_HC_p", "IBSD_HC_p", "IBSD_IBSC_p", "IBS_HC_q", "IBSC_HC_q", "IBSD_HC_q", "IBSD_IBSC")
+pMirRes <- merge(resultsIBS, pvalues, by = "row.names")
+
+row.names(pMirRes) <- pMirRes[,1]
+pMirRes$Row.names <- NULL
+fc <- cbind(topTable(ibs_fit2, number=374, coef = 1)[,1], topTable(ibs_fit2, number=374, coef = 2)[,1], topTable(ibs_fit2, number=374, coef = 3)[,1], topTable(ibs_fit2, number=374, coef = 4)[,1])
+pMirRes[,c("FC_IBS_HC","FC_IBS_C_HC","FC_IBS_D_HC","FC_IBS_D_IBS_C")] <- foldChange(fc)
+
+SigRes <- tableSig(pMirRes[,c(7:18)])
+SigRes
+ibs_hc_sig_plasma <- pMirRes[pMirRes$IBS_HC_p<0.05, c(7,11,15)]
+ibsC_hc_sig_plasma <- pMirRes[pMirRes$IBSC_HC_p<0.05, c(8,12,16)]
+ibsD_hc_sig_plasma <- pMirRes[pMirRes$IBSD_HC_p<0.05, c(9,13,17)]
+
+save(ibs_hc_sig_plasma, file = "ibs_hc_sig_plasma.rda")
+write.csv(ibs_hc_sig_plasma, file = "ibs_hc_sig_plasma.csv")
+
+save(ibsC_hc_sig_plasma, file= "ibsC_hc_sig_plasma.rda")
+write.csv(ibsC_hc_sig_plasma, file= "ibsC_hc_sig_plasma.csv")
+
+save(ibsD_hc_sig_plasma, file= "ibsD_hc_sig_plasma.rda")
+write.csv(ibsD_hc_sig_plasma, file= "ibsD_hc_sig_plasma.csv")
+
+
+save(resultsIBS, file="resultsIBSplasma.rda")
+resultsIBS$ibs_cont_sig0.05<-resultsIBS$P.Value<0.05
+resultsIBS$fdr_0.1<-resultsIBS$adj.P.Val<0.1
+
+SignP0.05<-subset(resultsIBS, resultsIBS$ibs_cont_sig0.05==TRUE); dim(SignP0.05)
+Sign_q<-subset(resultsIBS, resultsIBS$fdr_0.1==TRUE); dim(Sign_q)
+
+save(SignP0.05,Sign_q, file="sigPlasma.Rda")
+write.table(SignP0.05, file="IbsMirPlasmap05.csv", sep=",", col.names=NA)
+write.table(Sign_q, file="IbsMirPlasma_q0.1.csv", sep=",", col.names=NA)
+write.table(SigRes, file= "SigRes_plasma.csv", sep=",", col.names=NA)
+```
+# training and test
+```{r}
+## scale data
+norm.data4.sc <- apply(norm.data4,1,scale)
+row.names(norm.data4.sc) <- colnames(norm.data4)
+colnames(norm.data4.sc) <- row.names(norm.data4)
+# pipe and numbers in the colnames can cause issues
+## 75% of the sample size
+smp_size <- floor(0.50 * nrow(norm.data4.sc))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(norm.data4.sc)), size = smp_size)
+
+train <- norm.data4.sc[train_ind, ];dim(train)
+test <- norm.data4.sc[-train_ind, ]; dim(test)
+
+
+```
+
+```{r}
+require(caret)
+# require(foreign)
+# require(nnet)
+# require(ggplot2)
+# require(reshape2)
+require(stats)
+require(boot)
+require(lars)
+require(glmnet)
+rownames(train) <- substr(rownames(train),1,5)
+rownames(test) <- substr(rownames(test),1,5)
+
+match(colnames(train),colnames(test))
+phenoDat1$status <- ifelse(phenoDat1$Condition == "IBSD"|phenoDat1$Condition == "IBSC", phenoDat1$status <- "IBS","HC")
+phenoDat2<- phenoDat1[row.names(phenoDat1)%in%row.names(train),];dim(phenoDat2)
+phenoDat2[,8] <- as.factor(phenoDat2[,8])
+groupsDummy <- dummyVars("~.",data=phenoDat2[,8], fullRank=F)
+fit1 <- as.data.frame(predict(groupsDummy,train))
+
+fit1 <- lars(phenoDat2[,8], train, type = "lasso",trace=TRUE)
+coef(fit1)
+plot(fit1, lwd=2, lty="solid")
+
+fit.cv <- cv.lars(train3, trainY, type="lasso", plot.it = TRUE, use.Gram=FALSE)
+index <- which.min(fit.cv$cv.error)
+s <- fit.cv$index[index]
+
+
+testY <- predict.lars(fit1, test3, s=s, mode="lambda", type="fit")
+
+
+
+
+
+model1 <- glm(phenoDat2[,8]~ train, family = 'binomial')
+summary(model1)
+plot(model1,xvar="lambda")
+cv.mod <- cv.glmnet(train,y= as.numeric(phenoDat2[,8]),alpha=1)
+plot(cv.mod)
+best_lambda <- cv.mod$lambda.min
+best_lambda
+testY <- predict.lars(fit1, test3, s=s, mode="lambda", type="fit")
+p.fit <- predict.glm(model1, newdata = as.data.frame(test), type='response')
+
+
+
+r<-model1$residuals
+f<-fitted.values(model1,pch=19)
+par(mfrow=c(1,3))
+plot(r~f,ylab="Residuals",xlab="Fitted values",pch=19)
+hist(r,main="",xlab="Residuals")
+qqnorm(r); qqline(r, lwd=2)
+
+probabilities<-data.frame(test,p.fit)
+prob.dis <- as.data.frame(probabilities[,328:330])
+prob.dis$max1 <- NA
+
+for ( i in 1: dim(prob.dis)[1]) {
+  prob.dis[i,4] <- names(which.max(prob.dis[i,]))
+}
+
+as.data.frame(cbind(row.names(prob.dis),prob.dis[,4]))
+
+# ground truth
+phenoDat3<- phenoDat1[!row.names(phenoDat1)%in%row.names(train),];dim(phenoDat3)
+phenoDat3 <- phenoDat3[row.names(prob.dis),]
+match(row.names(prob.dis),row.names(phenoDat3))
+prob.dis$groundTruth <- phenoDat3[,2]
+write.table(prob.dis, file = "prob_based_test_labesls.csv", sep = ',', col.names = NA)
+
+```
+
+# PCA for test data set
+```{r}
+library(FactoMineR)
+pca1 <- prcomp(train,
+                 center = TRUE,
+                 scale. = TRUE)
+# print(pca1)
+# plot method
+plot(pca1, type = "l")
+summary(pca1)
+pred.pca <- predict(pca1,newdata = test)
+
+group <- phenoDat2[,8]
+COLOR <- c(2:3)
+PCH <- c(1,16)
+pc <- c(1,2)
+
+# par(mfrow= c(1,2))
+plot(pca1$x[,pc[1]], pca1$x[,pc[2]], col=COLOR[group], cex=PCH[1], xlim = c(-40,15), ylim = c(-10,25),xlab=paste0("PC ", pc[1], " (", round(pca1$sdev[pc[1]]/sum(pca1$sdev)*100,0), "%)"), ylab=paste0("PC ", pc[2], " (", round(pca1$sdev[pc[2]]/sum(pca1$sdev)*100,0), "%)"))
+points(pred.pca[,pc[1]], pred.pca[,pc[2]], col=COLOR[levels(group)=="1"], pch=PCH[2])
+points(pred.pca[,pc[1]], pred.pca[,pc[2]], col=COLOR[levels(group)=="0"], pch=PCH[2])
+
+# plot(pred.pca[,pc[1]], pred.pca[,pc[2]], col=COLOR[group], cex=PCH[1], xlim = c(-40,15), ylim = c(-10,25),xlab=paste0("PC ", pc[1], " (", round(pca1$sdev[pc[1]]/sum(pca1$sdev)*100,0), "%)"), ylab=paste0("PC ", pc[2], " (", round(pca1$sdev[pc[2]]/sum(pca1$sdev)*100,0), "%)"))
+
+
+
+library(devtools)
+install_github("ggbiplot", "vqv")
+ 
+library(ggbiplot)
+match(row.names(prob.dis), row.names(test2))
+
+### to make the varnames disappear
+dimnames(pca1$rotation)[[1]] <- 
+   Reduce(function(x,y) paste0(x,y),    # function to concatentate the lanks
+          rep(" ",dim(pca1$rotation)[1]),   # corrrect number of blanks
+           acc=TRUE)                    # save all intermediate strings
+
+ 
+g <- ggbiplot(pca1, obs.scale = 1, var.scale = 1, 
+              groups = prob.dis[,7], ellipse = TRUE, 
+              circle = TRUE,linetype = "dashed", alpha_arrow = 0.0)
+# g <- g + scale_color_discrete(name = '')
+g <- g + theme(legend.direction = 'horizontal', 
+               legend.position = 'top') +  geom_point(aes(colour=prob.dis[,7]), size = 2) 
+ggsave(g, file = "PCA.plot.test.png", width = 4, height = 4, units = "in")
+print(g)
+
+```
+
+# correlation with clinical traits
+```{r}
+
+
+```
+

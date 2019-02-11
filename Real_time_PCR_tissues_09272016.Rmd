@@ -1,0 +1,89 @@
+---
+title: "Real_time_PCR_tissues_09272016"
+author: "Swapna Mahurkar-Joshi"
+date: "September 28, 2016"
+output: word_document
+---
+
+Realtime PCR was performed with 32 samples and 2 targets + 2 reference genes in a 384 well plate. The two miRNAs were selected from differntially expressed miRNAs and were assessed using lower quantities of total RNA (<200ng). This was repeated using 500ng RNA. QC was performed using Bio-Rad CFX manager. The parent file with all the data are located in "C:\Users\swapnajoshi\Documents\UCLA_research\CURE_grant\Analyses\Real-time_tissues" Cleaned data were exported to .csv file.
+
+```{r}
+setwd("C:/Users/swapnajoshi-admin/Documents/miRNA_RTPCR_validations/IBSrealtimePCRproject_insitu/Realtime_PCR_analysis/")
+
+# Read .csv
+dat1 <- read.csv("miR_106_219_RT_32Samples_analysis.csv", row.names =1, check.names = FALSE); dim(dat1)
+dat1$BH <- dat1$Dx
+dat1$Dx <- gsub("C", "IBS", dat1$BH)
+dat1$Dx <- gsub("D", "IBS", dat1$Dx)
+dat1$miR_106b_5p<- gsub("NaN", "NA", dat1$miR_106b_5p)
+dat1$mir_219_5p<- gsub("NaN", "NA", dat1$mir_219_5p)
+dat1$miR_106b_5p <- as.numeric(as.character(dat1$miR_106b_5p))
+dat1$mir_219_5p <- as.numeric(as.character(dat1$mir_219_5p))
+
+t.test(dat1$miR_106b_5p ~ dat1$Dx, var.equal = TRUE)
+foldChange <- function(x,y) {ifelse(x>y, x/y, -1*(y/x))}
+FC <- foldChange(mean(subset(dat1, dat1$Dx == "IBS")$miR_106b_5p, na.rm = TRUE), mean(subset(dat1, dat1$Dx == "N")$miR_106b_5p, na.rm = TRUE))
+FC ## Fold Change
+foldChange <- function(x,y) {ifelse(x>y, x/y, -1*(y/x))}
+FC <- foldChange(mean(subset(dat1, dat1$Dx == "IBS")$mir_219_5p, na.rm = TRUE), mean(subset(dat1, dat1$Dx == "N")$mir_219_5p, na.rm = TRUE))
+
+t.test(dat1$mir_219_5p~dat1$Dx, var.equal = TRUE)
+foldChange <- function(x,y) {ifelse(x>y, x/y, -1*(y/x))}
+FC <- foldChange(mean(subset(dat1, dat1$Dx == "IBS")$mir_219_5p, na.rm = TRUE), mean(subset(dat1, dat1$Dx == "N")$mir_219_5p, na.rm = TRUE))
+
+FC ## Fold Change
+#################################
+dat1.CN <-  subset(dat1, dat1$BH == "C" | dat1$BH == "N")
+t.test(dat1.CN$miR_106b_5p ~ dat1.CN$BH, var.equal = TRUE)
+foldChange <- function(x,y) {ifelse(x>y, x/y, -1*(y/x))}
+FC <- foldChange(mean(subset(dat1.CN, dat1.CN$BH == "C")$miR_106b_5p, na.rm = TRUE), mean(subset(dat1.CN, dat1.CN$BH == "N")$miR_106b_5p, na.rm = TRUE))
+FC ## Fold Change
+
+t.test(dat1.CN$mir_219_5p~dat1.CN$Dx, var.equal = TRUE)
+foldChange <- function(x,y) {ifelse(x>y, x/y, -1*(y/x))}
+FC <- foldChange(mean(subset(dat1.CN, dat1.CN$BH == "C")$mir_219_5p, na.rm = TRUE), mean(subset(dat1.CN, dat1.CN$BH == "N")$mir_219_5p, na.rm = TRUE))
+FC ## Fold Change
+
+dat1.DN <-  subset(dat1, dat1$BH == "D" | dat1$BH == "N")
+
+t.test(dat1$miR_106b_5p ~ dat1$Dx, var.equal = TRUE)
+foldChange <- function(x,y) {ifelse(x>y, x/y, -1*(y/x))}
+FC <- foldChange(mean(subset(dat1, dat1$Dx == "IBS")$miR_106b_5p, na.rm = TRUE), mean(subset(dat1, dat1$Dx == "N")$miR_106b_5p, na.rm = TRUE))
+FC ## Fold Change
+
+t.test(dat1$mir_219_5p~dat1$Dx, var.equal = TRUE)
+foldChange <- function(x,y) {ifelse(x>y, x/y, -1*(y/x))}
+FC <- foldChange(mean(subset(dat1, dat1$Dx == "IBS")$mir_219_5p, na.rm = TRUE), mean(subset(dat1, dat1$Dx == "N")$mir_219_5p, na.rm = TRUE))
+FC ## Fold Change
+
+```
+
+Plots
+
+```{r, echo=FALSE}
+
+library(ggplot2)
+data_summary <- function(x) {
+   m <- mean(x, na.rm = TRUE)
+   ymin <- m-sd(x,na.rm = TRUE)
+   ymax <- m+sd(x,na.rm = TRUE)
+   return(c(y=m,ymin=ymin,ymax=ymax))
+}
+data_summary(dat1$miR_106b_5p)
+p <- ggplot(dat1, aes(dat1$Dx,dat1$miR_106b_5p))
+p + geom_jitter(size =3, width = 0.25) +  stat_summary(fun.data=data_summary, color="red") + annotate("text", label = "One-tailed P value = 0.92; Fold Change = -1.63", x = 1.5, y = 3.2, size = 4, colour = "Blue")
+
+data_summary(dat1$mir_219_5p)
+p <- ggplot(dat1, aes(dat1$Dx,dat1$mir_219_5p))
+p + geom_boxpot() + geom_jitter(size =3, width = 0.25, outlier = NULL) +  stat_summary(fun.data=data_summary, color="red") + annotate("text", label = "One-tailed P value = 0.015*; Fold Change = -2.02", x = 1.5, y = 24, size = 4, colour = "Blue")
+# p + geom_jitter(size =3, width = 0.25) +  stat_summary(fun.y=mean, geom="point", shape=18, size = 5, color="red")
+
+```
+
+Nanostring array showed 1.23 fold upregulation of miR-106b-5p and downregulation of miR-219a-5p (-2.24)
+
+
+
+
+
+

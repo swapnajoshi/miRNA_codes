@@ -1,0 +1,90 @@
+---
+title: "complexheatmap_heatmap"
+author: "Swapna Mahurkar-Joshi"
+date: "September 9, 2016"
+output: html_document
+---
+```{r}
+library(ComplexHeatmap)
+library(circlize)
+```
+
+# Heatmap for DE miRNAs
+```{r}
+load("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/biopsy_data.Rda")
+ibs_hc_0.05 <- read.delim("ibs_hc_0.05.csv", sep = ","); dim(ibs_hc_0.05)
+row.names(ibs_hc_0.05)  <- matrix(unlist(strsplit(as.character(ibs_hc_0.05$X),"\\|")), nrow = dim(ibs_hc_0.05)[1], ncol= 2, byrow = TRUE )[,1]
+load("norm.data4.rda")
+row.names(norm.data4)<- matrix(unlist(strsplit(as.character(row.names(norm.data4)),"\\|")), nrow = dim(norm.data4)[1], ncol= 2, byrow = TRUE )[,1]
+dat.mir <- norm.data4[row.names(norm.data4)%in% row.names(ibs_hc_0.05),]
+colnames(dat.mir) <- substr(colnames(dat.mir),1,5)
+row.names(phenoDat1) <- substr(row.names(phenoDat1),1,5)
+dat.mir <- dat.mir[row.names(ibs_hc_0.05),]
+dat.mir <- dat.mir[,row.names(phenoDat1)]
+match(colnames(dat.mir),row.names(phenoDat1))
+pval <- ibs_hc_0.05$IBS_HC_p
+colVar <- phenoDat1$Condition
+color1 <- ifelse(colVar == "IBSD","purple",ifelse(colVar == "IBSC","blue","yellow"))
+ha <- HeatmapAnnotation(df = data.frame(BH_subtype = color1))
+mat_scaled = t(apply(dat.mir, 1, scale))
+colnames(mat_scaled) <- colnames(dat.mir)
+
+
+Heatmap(mat_scaled, name = "Expression", km = 5, col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")),
+    top_annotation = ha, top_annotation_height = unit(4, "mm"), 
+    show_row_names = TRUE, show_column_names = FALSE) +
+Heatmap(pval, name = "P Value", show_row_names = FALSE, width = unit(5, "mm")) 
+
+```
+
+#IBS HC separately; heatmaplist
+
+```{r}
+ibs <- mat_scaled[,colnames(mat_scaled)%in%row.names(phenoDat1[phenoDat1$Condition != "HC",])]
+hc <- mat_scaled[,colnames(mat_scaled)%in%row.names(phenoDat1[phenoDat1$Condition == "HC",])]
+
+colvar1 <- phenoDat1[phenoDat1$Condition != "HC",]$Condition
+ha1 <- HeatmapAnnotation(df = data.frame(BH_subtype = colvar1))
+
+colvar2 <- phenoDat1[phenoDat1$Condition == "HC",]$Condition
+ha2 <- HeatmapAnnotation(df = data.frame(BH_subtype = colvar2))
+
+ht1 = Heatmap(ibs, name = "IBS", km = 2, top_annotation = ha1, top_annotation_height = unit(2, "mm"), show_column_names = FALSE, show_row_names = FALSE,col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")))
+ht2 = Heatmap(hc, name = "Healthy controls", top_annotation = ha2, top_annotation_height = unit(2, "mm"),show_column_names = FALSE, show_row_names = TRUE,col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")))
+ht3 = Heatmap(pval, name = "P Value", show_row_names = FALSE, width = unit(5, "mm"),col = colorRamp2(c(0.00, 0.01, 0.05), c("green", "white", "red")))
+class(ht1); class(ht2)
+
+ht_list = ht1 + ht2 +ht3 
+class(ht_list)
+png("ibs_hc_separate_hms.png", res = 300, height = 2000, width = 3000)
+draw(ht_list, row_title = "Differentially expressed miRNAs", row_title_gp = gpar(col = "red"),
+    column_title = "IBS and Healthy control Samples", column_title_side = "bottom")
+dev.off()
+
+
+draw(ht_list, row_title = "Differentially expressed miRNAs", row_title_gp = gpar(col = "red"),
+    column_title = "IBS and Healthy control Samples", column_title_side = "bottom")
+```
+
+#IBS bh separately; heatmaplist
+
+```{r}
+ibs.c <- mat_scaled[,colnames(mat_scaled)%in%row.names(phenoDat1[phenoDat1$Condition == "IBSC",])]
+ibs.d <- mat_scaled[,colnames(mat_scaled)%in%row.names(phenoDat1[phenoDat1$Condition == "IBSD",])]
+hc <- mat_scaled[,colnames(mat_scaled)%in%row.names(phenoDat1[phenoDat1$Condition == "HC",])]
+
+ht1 = Heatmap(ibs.c, name = "IBS-C", km = 2,show_column_names = FALSE, show_row_names = FALSE,col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")))
+ht2 = Heatmap(ibs.d, name = "IBS-D", km = 2, show_column_names = FALSE, show_row_names = FALSE,col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")))
+ht3 = Heatmap(hc, name = "Healthy controls", show_column_names = FALSE,col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")))
+ht4 = Heatmap(pval, name = "P Value", show_row_names = FALSE, width = unit(5, "mm"),col = colorRamp2(c(0.00, 0.01, 0.05), c("green", "white", "red"))) 
+
+class(ht1); class(ht2)
+
+ht_list = ht1 + ht2 +ht3 +ht4
+class(ht_list)
+png("ibs_bh_hc_separate_hms1.png", res = 300, height = 2000, width = 3000)
+draw(ht_list, row_title = "Differentially expressed miRNAs", row_title_gp = gpar(col = "red"),
+    column_title = "IBS and Healthy control Samples", column_title_side = "bottom")
+dev.off()
+ht_list
+```

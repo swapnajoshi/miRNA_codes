@@ -1,0 +1,495 @@
+
+---
+title: "miRNA_mRNA_int_V3"
+author: "Swapna Mahurkar-Joshi"
+date: "July 21, 2016"
+output: html_document
+---
+
+# Bipartite analysis 
+```{r, message=FALSE}
+source("https://bioconductor.org/biocLite.R")
+biocLite("Rcpp")
+library(Hmisc)
+library(heatmap.plus)
+library(matlab)
+# library(survival)
+.libPaths()
+```
+# Filtered for significance
+
+# Since it takes the whole matrix, separate IBS, HC and BHS and run them inorder to identify no overlapping pathways
+
+# format the data for input into miRMAP
+```{r, message=FALSE}
+# import mRNA data
+setwd("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/miRNA_mRNA_integration/")
+mRNA <- read.delim("mRNA_IBS_HC_May2016_Beth.csv", sep = ",", row.names = 1); dim(mRNA)
+sig_mrna <- subset(mRNA, mRNA$P.Value <=0.05); dim(sig_mrna)
+dat_mrna <- read.delim("Dat_mrna.csv", sep = ",", row.names = 1); dim(dat_mrna)
+colnames(dat_mrna)[1:30] <- substr(colnames(dat_mrna)[1:30],3,7)
+annot_mrna <- dat_mrna[,c(61:76)]
+dat_mrna_sig <- dat_mrna[row.names(dat_mrna)%in%row.names(sig_mrna),]; dim(dat_mrna_sig)
+dat_mrna_sig1 <- dat_mrna_sig[,c(1:30, 64,73)]
+
+#import miRNA data
+sig_mir <- read.delim("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/IbsMirbiopsy_SigRes.csv", sep = ",", row.names = 1); dim(sig_mir)
+load("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/norm.data4.rda"); dim(norm.data4)
+
+ibs_mirna <- unique(matrix(unlist(strsplit(row.names(sig_mir[sig_mir$IBS_HC_p<0.05,]),"\\|")), nrow = 44, ncol = 2, byrow = TRUE)[,1])
+
+row.names(norm.data4) <- matrix(unlist(strsplit(row.names(norm.data4),"\\|")), nrow = 256, ncol = 2, byrow = TRUE)[,1]
+dat_mir <- norm.data4[row.names(norm.data4)%in%ibs_mirna,]; dim(dat_mir); dat_mir[1:5,1:5]
+
+
+# order
+colnames(dat_mir) <- substr(colnames(dat_mir), 1, 5)
+dat_mrna1 <- dat_mrna_sig1[,colnames(dat_mrna_sig1)%in%colnames(dat_mir)]; dim(dat_mrna1)
+dat_mir1 <- dat_mir[ ,colnames(dat_mir)%in%colnames(dat_mrna1)]; dim(dat_mir1)
+dat_mrna1 <- dat_mrna1[ ,colnames(dat_mir1)]
+match(colnames(dat_mrna1),colnames(dat_mir1))
+dat_mrna2 <- cbind(dat_mrna_sig1[,c(dim(dat_mrna_sig1)[2],dim(dat_mrna_sig1)[2]-1) ],dat_mrna1)
+
+write.table(dat_mrna2, file = "dat_mrna_v2.txt", sep="\t", col.names = NA)
+write.table(dat_mir1, file = "dat_miRna_v2.txt", sep="\t", col.names = NA)
+
+
+### IBS and HC seaprately
+phenoDat1 <- read.delim("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/TissueMir/phenoDat1.csv", sep = ",")
+row.names(phenoDat1) <- substr(phenoDat1[,1],1,5)
+phenoDat2 <- phenoDat1[row.names(phenoDat1)%in%colnames(dat_mir1),]
+phenoDat2 <- phenoDat2[colnames(dat_mir1),]
+phenoDat2$Group <- ifelse(phenoDat2$Condition == "HC", "HC", "IBS")
+dat_mir1_ibs <- dat_mir1[, phenoDat2$Group != "HC"]
+dat_mir1_hc <- dat_mir1[, phenoDat2$Group == "HC"]
+
+write.table(dat_mir1_ibs, file = "dat_mir1_ibs.txt", sep="\t", col.names = NA)
+write.table(dat_mir1_hc, file = "dat_mir1_hc.txt", sep="\t", col.names = NA)
+
+
+dat_mrna2_ibs <- dat_mrna2[, phenoDat2$Group != "HC"]
+dat_mrna2_hc <- dat_mrna2[, phenoDat2$Group == "HC" ]
+match(row.names(dat_mrna2_ibs), row.names(dat_mrna2_hc))
+
+dat_mrna2_hc <- cbind(dat_mrna2_ibs[,c(1,2)], dat_mrna2_hc )
+
+write.table(dat_mrna2_ibs, file = "dat_mrna2_ibs.txt", sep="\t", col.names = NA)
+write.table(dat_mrna2_hc, file = "dat_mrna2_hc.txt", sep="\t", col.names = NA)
+
+
+```
+# Bowel habit subtype miRMAP
+# IBSC
+```{r}
+setwd("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/miRNA_mRNA_integration/Bicluster_analysis/bowel_habits/")
+
+ibsc.mrna <- read.csv("All Comparison mRNAs-IBSC.csv", check.names = FALSE, row.names = 1); dim(ibsc.mrna)
+
+sig_ibsc.mrna <- subset(ibsc.mrna, ibsc.mrna$'P-value' <=0.05); dim(sig_ibsc.mrna)
+dat_ibsc.mrna <- sig_ibsc.mrna[,c(grep("normalized",colnames(sig_ibsc.mrna)), 8,17)]
+dat_ibsc.mrna <- dat_ibsc.mrna[,-c(1,2)]; dim(dat_ibsc.mrna)
+colnames(dat_ibsc.mrna)[1:20] <- substr(colnames(dat_ibsc.mrna),2,6)[1:20]
+
+#import miRNA data
+sig_mir <- read.delim("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/IbsMirbiopsy_SigRes.csv", sep = ",", row.names = 1); dim(sig_mir)
+load("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/norm.data4.rda"); dim(norm.data4)
+
+ibsc_mirna <- unique(matrix(unlist(strsplit(row.names(sig_mir[sig_mir$IBSC_HC_p<0.05,]),"\\|")), nrow = 43, ncol = 2, byrow = TRUE)[,1])
+
+row.names(norm.data4) <- matrix(unlist(strsplit(row.names(norm.data4),"\\|")), nrow = 256, ncol = 2, byrow = TRUE)[,1]
+dat_ibsc.mir <- norm.data4[row.names(norm.data4)%in%ibsc_mirna,]; dim(dat_ibsc.mir); dat_ibsc.mir[1:5,1:5]
+
+colnames(dat_ibsc.mir) <- substr(colnames(dat_ibsc.mir), 1, 5)
+phenoDat1 <- read.delim("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/TissueMir/phenoDat1.csv", sep = ",")
+row.names(phenoDat1) <- substr(phenoDat1[,1],1,5)
+phenoDat2 <- phenoDat1[phenoDat1$Condition == "IBSC",]
+dat_ibsc.mir1 <- dat_ibsc.mir[,colnames(dat_ibsc.mir)%in%row.names(phenoDat2)]
+dat_ibsc.mrna1 <- dat_ibsc.mrna[,colnames(dat_ibsc.mrna)%in%row.names(phenoDat2)]
+
+
+# order
+
+dat_ibsc.mrna2 <- dat_ibsc.mrna1[,colnames(dat_ibsc.mrna1)%in%colnames(dat_ibsc.mir1)]; dim(dat_ibsc.mrna2)
+dat_ibsc.mir2 <- dat_ibsc.mir1[ ,colnames(dat_ibsc.mir1)%in%colnames(dat_ibsc.mrna2)]; dim(dat_ibsc.mir2)
+dat_ibsc.mrna2 <- dat_ibsc.mrna2[ ,colnames(dat_ibsc.mir2)]
+match(colnames(dat_ibsc.mrna2),colnames(dat_ibsc.mrna2))
+dat_ibsc.mrna2 <- cbind(dat_ibsc.mrna[,c(dim(dat_ibsc.mrna)[2],dim(dat_ibsc.mrna)[2]-1) ],dat_ibsc.mrna2)
+
+write.table(dat_ibsc.mrna2, file = "dat_mrna_ibsc_v2.txt", sep="\t", col.names = NA)
+write.table(dat_ibsc.mir2, file = "dat_miRna_ibsc_v2.txt", sep="\t", col.names = NA)
+
+```
+
+
+# IBSD
+
+```{r}
+setwd("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/miRNA_mRNA_integration/Bicluster_analysis/bowel_habits/")
+
+IBSD.mrna <- read.csv("All Comparison mRNAs-IBSD.csv", check.names = FALSE, row.names = 1); dim(IBSD.mrna)
+
+sig_IBSD.mrna <- subset(IBSD.mrna, IBSD.mrna$'P-value' <=0.05); dim(sig_IBSD.mrna)
+dat_IBSD.mrna <- sig_IBSD.mrna[,c(grep("normalized",colnames(sig_IBSD.mrna)), 8,17)]
+dat_IBSD.mrna <- dat_IBSD.mrna[,-c(1,2)]; dim(dat_IBSD.mrna)
+colnames(dat_IBSD.mrna)[1:20] <- substr(colnames(dat_IBSD.mrna),2,6)[1:20]
+
+#import miRNA data
+sig_mir <- read.delim("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/IbsMirbiopsy_SigRes.csv", sep = ",", row.names = 1); dim(sig_mir)
+load("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/norm.data4.rda"); dim(norm.data4)
+
+IBSD_mirna <- unique(matrix(unlist(strsplit(row.names(sig_mir[sig_mir$IBSD_HC_p<0.05,]),"\\|")), nrow = 21, ncol = 2, byrow = TRUE)[,1])
+
+row.names(norm.data4) <- matrix(unlist(strsplit(row.names(norm.data4),"\\|")), nrow = 256, ncol = 2, byrow = TRUE)[,1]
+dat_IBSD.mir <- norm.data4[row.names(norm.data4)%in%IBSD_mirna,]; dim(dat_IBSD.mir); dat_IBSD.mir[1:5,1:5]
+
+colnames(dat_IBSD.mir) <- substr(colnames(dat_IBSD.mir), 1, 5)
+phenoDat1 <- read.delim("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/TissueMir/phenoDat1.csv", sep = ",")
+row.names(phenoDat1) <- substr(phenoDat1[,1],1,5)
+phenoDat2 <- phenoDat1[phenoDat1$Condition == "IBSD",]
+dat_IBSD.mir1 <- dat_IBSD.mir[,colnames(dat_IBSD.mir)%in%row.names(phenoDat2)]
+dat_IBSD.mrna1 <- dat_IBSD.mrna[,colnames(dat_IBSD.mrna)%in%row.names(phenoDat2)]
+
+
+# order
+
+dat_IBSD.mrna2 <- dat_IBSD.mrna1[,colnames(dat_IBSD.mrna1)%in%colnames(dat_IBSD.mir1)]; dim(dat_IBSD.mrna2)
+dat_IBSD.mir2 <- dat_IBSD.mir1[ ,colnames(dat_IBSD.mir1)%in%colnames(dat_IBSD.mrna2)]; dim(dat_IBSD.mir2)
+dat_IBSD.mrna2 <- dat_IBSD.mrna2[ ,colnames(dat_IBSD.mir2)]
+match(colnames(dat_IBSD.mrna2),colnames(dat_IBSD.mrna2))
+dat_IBSD.mrna2 <- cbind(dat_IBSD.mrna[,c(dim(dat_IBSD.mrna)[2],dim(dat_IBSD.mrna)[2]-1) ],dat_IBSD.mrna2)
+
+write.table(dat_IBSD.mrna2, file = "dat_mrna_IBSD_v2.txt", sep="\t", col.names = NA)
+write.table(dat_IBSD.mir2, file = "dat_miRna_IBSD_v2.txt", sep="\t", col.names = NA)
+
+```
+
+# Prediction matirx may have been outdated, create a new prediction matrix
+```{r}
+# import matrix with 3 columns
+# create vectors with unique row and column ids
+# create a matrix with these vectors as row and column names
+
+setwd("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/miRNA_mRNA_integration/Bicluster_analysis/")
+targetScan <- read.delim("Summary_Counts.txt", sep = "\t")
+TS.hs <- targetScan[grep("hsa", targetScan$Representative.miRNA),]
+TS_uni_mir <- TS.hs[unique(TS.hs$Representative.miRNA),13]; length(TS_uni_mir)
+TS_uni_mRNA <- TS.hs[unique(TS.hs$Gene.Symbol),2];length(TS_uni_mRNA)
+TS_mat <- matrix(NA, nrow = length(TS_uni_mRNA), ncol = length(TS_uni_mir) )
+row.names(TS_mat) <- TS_uni_mRNA
+colnames(TS_mat) <- TS_uni_mir
+load("targetScan_updated_matrix_rel_files.Rda")
+# fill scores in the matrix
+
+# loop to make matches
+for ( i in 1:length(row.names(TS_mat)) ){
+  for ( j in 1:length(row.names(TS.hs)) ) {
+    cat(paste(i,j),"\n")
+  if (c(row.names(TS_mat)[i], colnames(TS_mat)[i]) == c(TS.hs[j,2], TS.hs[j,13]))
+  {TS_mat[i,j] = TS.hs[j,14]}
+    else if (c(row.names(TS_mat)[i], colnames()[i]) != c(TS.hs[j,2], TS.hs[j,13]))
+  {TS_mat[i] = NA}
+  }
+}
+save(TS_mat, file = "TS_mat.txt", sep = "\t")TS_mat
+
+mat1 <- TS_mat
+TS.hs1 <- TS.hs[,c(2,13,14)]
+mat2<- TS.hs1
+# fillMat <- function(mat1, mat2){
+  for ( i in 1:length(row.names(mat1)) ){
+    for(j in 1: length(colnames(mat1))){
+  for ( k in 1:length(row.names(mat2)) ) {
+    cat(paste(i,j),"\n")
+  if (paste(rownames(mat1)[i], colnames(mat1)[j],sep = "_") == paste(as.character(mat2[k,1]), as.character(mat2[k,2]), sep = "_"))
+  mat1[i,j] <- mat2[k,3]
+    # else (mat1[i,j] <- NA)
+  }
+}
+  }
+
+save(mat1, file= "ts_updated_matrix.txt", sep = "\t")
+
+
+
+# related script was run else where
+mat1 <- read.delim("C:/Users/swapnajoshi-admin/Downloads/newmat1_8_4.txt", sep = ",",na.strings=c("","NA"))
+
+
+source("https://bioconductor.org/biocLite.R")
+biocLite("biomaRt")
+library(biomaRt)
+
+ensembl = useMart("ensembl",dataset="hsapiens_gene_ensembl")
+# filters = listFilters(ensembl)
+# filters[1:25,]
+mat2 <- mat1[-grep("_",as.character(mat1[,1])),]
+symbol1 <- mat2[,1]
+ent.id = getBM(c('entrezgene','hgnc_symbol'), filters='hgnc_symbol', values=symbol1,mart=ensembl)
+head(ent.id)
+mat3 <- merge(mat2, ent.id, by.x = "Row", by.y = "hgnc_symbol")
+mat3 <- mat3[,c(2124, 1:2123)]
+write.table(mat3, file = "tsMatrix_updated_new.txt", sep = "\t")
+```
+
+
+
+
+
+
+
+
+
+
+
+######################################################################
+Since miRMAP performs correlation and cancels the non-meaningful interactions based on predicted target binding information, this part is not needed
+
+# correlation between miRNA and mRNA
+```{r}
+data1<-cbind(t(dat_mir1),t(dat_mrna1)); dim(data1)
+library(ellipse)
+ctab <- cor(data1)
+corMat<-round(ctab, 2); dim(corMat)
+corMat_1 <-corMat[1:256, 257:24593]
+#
+
+```
+
+# visualize correlation matrix
+```{r, echo=FALSE}
+library(mixOmics)
+color<-color.jet
+par(mfrow = c(1,2));
+png("mixOmics.png", height=2000, width=3000, res=300)
+liver.splsda <- imgCor(t(dat_mir1), t(dat_mrna1), X.var.names = TRUE,
+                       Y.var.names = TRUE,
+                       sideColors = TRUE,
+                       interactive.dev = TRUE,
+                       main = TRUE)
+# color, row.cex, col.cex,symkey, keysize,
+# xlab, ylab, margins, lhei, lwid)
+dev.off()
+```
+
+```{r}
+plot(as.matrix(dat_mir1[row.names(dat_mir1) %in% "hsa-miR-612|0",]), dat_mrna1[dat_mrna[,31] %in% "KPNA6",])
+
+plot(as.matrix(dat_mir1[row.names(dat_mir1) %in% "hsa-miR-5438aa|0",]), dat_mrna1[dat_mrna[,31] %in% "CXCL1",])
+```
+
+```{r}
+
+
+```
+# correlation betweem all genes and all miRNAs
+```{r, message=FALSE}
+# import mRNA data
+setwd("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/miRNA_mRNA_integration/")
+mRNA <- read.delim("mRNA_IBS_HC_May2016_Beth.csv", sep = ",", row.names = 1); dim(mRNA)
+dat_mrna <- read.delim("Dat_mrna.csv", sep = ",", row.names = 1); dim(dat_mrna)
+colnames(dat_mrna)[1:30] <- substr(colnames(dat_mrna)[1:30],3,7)
+annot_mrna <- dat_mrna[,c(61:76)]
+dat_mrna <- dat_mrna[,c(1:30, 64,73)]; dim(dat_mrna); dat_mrna[1:5,1:5]
+
+
+#import miRNA data
+load("C:/Users/swapnajoshi/Documents/UCLA_research/miRNAtissueSerumIbs/nanostring_data/Results/biopsy_miR/norm.data4.rda"); dim(norm.data4)
+colnames(norm.data4) <- substr(colnames(norm.data4), 1, 5)
+dat_mrna1 <- dat_mrna[,colnames(dat_mrna)%in%colnames(norm.data4)]; dim(dat_mrna1)
+dat_mir1 <- norm.data4[ ,colnames(norm.data4)%in%colnames(dat_mrna1)]; dim(dat_mir1)
+dat_mrna1 <- dat_mrna1[ ,colnames(dat_mir1)]
+match(colnames(dat_mrna1),colnames(dat_mir1))
+dat_mrna2 <- cbind(dat_mrna1, dat_mrna[,c(dim(dat_mrna)[2]-1,dim(dat_mrna)[2]) ])
+
+write.table(dat_mrna2, file = "dat_mrna_large.txt", sep="\t", col.names = NA)
+write.table(dat_mir1, file = "dat_miRna_large.txt", sep="\t", col.names = NA)
+
+# correlation between miRNA and mRNA
+data1<-cbind(t(dat_mir1),t(dat_mrna1)); dim(data1)
+library(ellipse)
+ctab <- cor(data1)
+corMat<-round(ctab, 2); dim(corMat)
+corMat_1 <-corMat[1:256, 257:24593]
+#
+
+```
+# visualize correlation matrix
+```{r, echo=FALSE}
+library(mixOmics)
+color<-color.jet
+par(mfrow = c(1,2));
+png("mixOmics.png", height=2000, width=3000, res=300)
+liver.splsda <- imgCor(t(dat_mir1), t(dat_mrna1), X.var.names = TRUE,
+                       Y.var.names = TRUE,
+                       sideColors = TRUE,
+                       interactive.dev = TRUE,
+                       main = TRUE)
+# color, row.cex, col.cex,symkey, keysize,
+# xlab, ylab, margins, lhei, lwid)
+dev.off()
+```
+
+```{r}
+plot(as.matrix(dat_mir1[row.names(dat_mir1) %in% "hsa-miR-219-5p",]), dat_mrna_sig1[dat_mrna_sig1[,31] %in% "ADRA2C",-c(31,32)])
+
+plot(as.matrix(dat_mir1[row.names(dat_mir1) %in% "hsa-miR-5438aa|0",]), dat_mrna1[dat_mrna[,31] %in% "CXCL1",])
+```
+# correlation between miRNA and mRNA
+```{r}
+data1<-cbind(t(dat_mir1),t(dat_mrna1)); dim(data1)
+library(ellipse)
+ctab <- cor(data1)
+corMat<-round(ctab, 2); dim(corMat)
+corMat_1 <-corMat[1:256, 257:24593]
+#
+```
+# Box plot
+```{r}
+library(ggplot2)
+phenoDat1 <- read.delim("C:/Users/swapnajoshi-admin/Documents/GIT_workspace/TissueMir/phenoDat1.csv", sep = ",")
+row.names(phenoDat1) <- substr(phenoDat1[,1],1,5)
+phenoDat2 <- phenoDat1[row.names(phenoDat1)%in%colnames(dat_mir1),]
+phenoDat2 <- phenoDat2[colnames(dat_mir1),]
+match(colnames(dat_mir1), row.names(phenoDat2))
+phenoDat2$Group <- ifelse(phenoDat2$Condition == "HC", "HC", "IBS")
+
+mir219 <- as.data.frame(as.numeric(as.character(dat_mir1[row.names(dat_mir1) %in% "hsa-miR-219-5p",])))
+mir219$Group <- phenoDat2$Group
+row.names(mir219) <- colnames(dat_mir1)
+colnames(mir219)[1] <- "hsa_miR_219"
+library(ggplot2)
+p <- ggplot(mir219, aes(factor(Group), hsa_miR_219))
+p + geom_boxplot(aes(fill = factor(Group)))
+
+
+adra2c <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "ADRA2C",-c(31,32)]
+adra2c <- adra2c[,row.names(phenoDat2)]
+match(colnames(adra2c), row.names(phenoDat2))
+adra2c<- as.data.frame(as.numeric(as.character(adra2c)))
+adra2c$Group <- phenoDat2$Group
+row.names(adra2c) <- colnames(dat_mir1)
+colnames(adra2c)[1] <- "adra2c"
+p <- ggplot(adra2c, aes(factor(Group), adra2c))
+p + geom_boxplot(aes(fill = factor(Group)))
+
+etv5 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "ETV5",-c(31,32)]
+etv5 <- etv5[,row.names(phenoDat2)]
+match(colnames(etv5), row.names(phenoDat2))
+etv5<- as.data.frame(as.numeric(as.character(etv5)))
+etv5$Group <- phenoDat2$Group
+row.names(etv5) <- colnames(dat_mir1)
+colnames(etv5)[1] <- "etv5"
+p <- ggplot(etv5, aes(factor(Group), etv5))
+p + geom_boxplot(aes(fill = factor(Group)))
+
+
+cldn20 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "CLDN20",-c(31,32)]
+cldn20 <- cldn20[,row.names(phenoDat2)]
+match(colnames(cldn20), row.names(phenoDat2))
+cldn20<- as.data.frame(as.numeric(as.character(cldn20)))
+cldn20$Group <- phenoDat2$Group
+row.names(cldn20) <- colnames(dat_mir1)
+colnames(cldn20)[1] <- "cldn20"
+p <- ggplot(cldn20, aes(factor(Group), cldn20))
+p + geom_boxplot(aes(fill = factor(Group)))
+
+
+
+FGF14 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "FGF14",-c(31,32)]
+FGF14 <- FGF14[,row.names(phenoDat2)]
+match(colnames(FGF14), row.names(phenoDat2))
+FGF14<- as.data.frame(as.numeric(as.character(FGF14)))
+FGF14$Group <- phenoDat2$Group
+row.names(FGF14) <- colnames(dat_mir1)
+colnames(FGF14)[1] <- "FGF14"
+p <- ggplot(FGF14, aes(factor(Group), FGF14))
+p + geom_boxplot(aes(fill = factor(Group)))
+
+
+FGF12 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "FGF12",-c(31,32)]
+FGF12 <- FGF12[,row.names(phenoDat2)]
+match(colnames(FGF12), row.names(phenoDat2))
+FGF12<- as.data.frame(as.numeric(as.character(FGF12)))
+FGF12$Group <- phenoDat2$Group
+row.names(FGF12) <- colnames(dat_mir1)
+colnames(FGF12)[1] <- "FGF12"
+p <- ggplot(FGF12, aes(factor(Group), FGF12))
+p + geom_boxplot(aes(fill = factor(Group)))
+
+DUSP10 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "DUSP10",-c(31,32)]
+DUSP10 <- DUSP10[,row.names(phenoDat2)]
+match(colnames(DUSP10), row.names(phenoDat2))
+DUSP10<- as.data.frame(as.numeric(as.character(DUSP10)))
+DUSP10$Group <- phenoDat2$Group
+row.names(DUSP10) <- colnames(dat_mir1)
+colnames(DUSP10)[1] <- "DUSP10"
+p <- ggplot(DUSP10, aes(factor(Group), DUSP10))
+p + geom_boxplot(aes(fill = factor(Group)))
+
+
+RB1CC1 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "RB1CC1",-c(31,32)]
+RB1CC1 <- RB1CC1[,row.names(phenoDat2)]
+match(colnames(RB1CC1), row.names(phenoDat2))
+RB1CC1<- as.data.frame(as.numeric(as.character(RB1CC1[1,])))
+RB1CC1$Group <- phenoDat2$Group
+row.names(RB1CC1) <- colnames(dat_mir1)
+colnames(RB1CC1)[1] <- "RB1CC1"
+p <- ggplot(RB1CC1, aes(factor(Group), RB1CC1))
+p + geom_boxplot(aes(fill = factor(Group)))
+
+
+RB1CC1 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "RB1CC1",-c(31,32)]
+RB1CC1 <- RB1CC1[,row.names(phenoDat2)]
+match(colnames(RB1CC1), row.names(phenoDat2))
+RB1CC1<- as.data.frame(as.numeric(as.character(RB1CC1[2,])))
+RB1CC1$Group <- phenoDat2$Group
+row.names(RB1CC1) <- colnames(dat_mir1)
+colnames(RB1CC1)[1] <- "RB1CC1"
+p <- ggplot(RB1CC1, aes(factor(Group), RB1CC1))
+p + geom_boxplot(aes(fill = factor(Group)))
+
+# Bowel habit
+FGF14 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "FGF14",-c(31,32)]
+FGF14 <- FGF14[,row.names(phenoDat2)]
+match(colnames(FGF14), row.names(phenoDat2))
+FGF14<- as.data.frame(as.numeric(as.character(FGF14)))
+FGF14$Condition <- phenoDat2$Condition
+row.names(FGF14) <- colnames(dat_mir1)
+colnames(FGF14)[1] <- "FGF14"
+p <- ggplot(FGF14, aes(factor(Condition), FGF14))
+p + geom_boxplot(aes(fill = factor(Condition)))
+
+FGF12 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "FGF12",-c(31,32)]
+FGF12 <- FGF12[,row.names(phenoDat2)]
+match(colnames(FGF12), row.names(phenoDat2))
+FGF12<- as.data.frame(as.numeric(as.character(FGF12)))
+FGF12$Condition <- phenoDat2$Condition
+row.names(FGF12) <- colnames(dat_mir1)
+colnames(FGF12)[1] <- "FGF12"
+p <- ggplot(FGF12, aes(factor(Condition), FGF12))
+p + geom_boxplot(aes(fill = factor(Condition)))
+
+ETV5 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "ETV5",-c(31,32)]
+ETV5 <- ETV5[,row.names(phenoDat2)]
+match(colnames(ETV5), row.names(phenoDat2))
+ETV5<- as.data.frame(as.numeric(as.character(ETV5)))
+ETV5$Condition <- phenoDat2$Condition
+row.names(ETV5) <- colnames(dat_mir1)
+colnames(ETV5)[1] <- "ETV5"
+p <- ggplot(ETV5, aes(factor(Condition), ETV5))
+p + geom_boxplot(aes(fill = factor(Condition)))
+
+
+CLDN20 <- dat_mrna_sig1[dat_mrna_sig1[,31] %in% "CLDN20",-c(31,32)]
+CLDN20 <- CLDN20[,row.names(phenoDat2)]
+match(colnames(CLDN20), row.names(phenoDat2))
+CLDN20<- as.data.frame(as.numeric(as.character(CLDN20)))
+CLDN20$Condition <- phenoDat2$Condition
+row.names(CLDN20) <- colnames(dat_mir1)
+colnames(CLDN20)[1] <- "CLDN20"
+p <- ggplot(CLDN20, aes(factor(Condition), CLDN20))
+p + geom_boxplot(aes(fill = factor(Condition)))
+
+
+```
+
